@@ -65,7 +65,7 @@ fn legacy_projects_sound_identical() {
         ("Acid", 1.761267255934134e3, -4.1389665e-1, -3.6407086e-1, -4.78434e-2),
         ("Hard Stab", 2.651999018524897e2, -3.2792622e-1, -1.6448808e-1, -2.2993014e-4),
     ];
-    let legacy: Vec<(String, SynthParams)> = ron::from_str(include_str!("testdata/legacy_synth_presets.ron")).expect("old presets load");
+    let legacy: Vec<(String, SynthParams)> = ron::from_str(include_str!("../testdata/legacy_synth_presets.ron")).expect("old presets load");
     assert_eq!(legacy.len(), FP.len());
     for ((name, p), (fname, e0, a0, b0, c0)) in legacy.iter().zip(FP) {
         assert_eq!(name, fname);
