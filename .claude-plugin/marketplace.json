@@ -1,0 +1,12 @@
+{
+  "name": "tstudio",
+  "owner": { "name": "TStudio" },
+  "metadata": { "description": "Lokaler Marketplace für die TStudio-DAW" },
+  "plugins": [
+    {
+      "name": "tstudio",
+      "source": "./claude-plugin",
+      "description": "Lässt Claude die TStudio-DAW über tstudio-cli bedienen: Beats/Patterns schreiben, Synths und Effekte einstellen, rendern und das Ergebnis per Analyse prüfen."
+    }
+  ]
+}

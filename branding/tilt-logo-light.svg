@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="75%">
+      <stop offset="0" stop-color="#FBF8F3"/>
+      <stop offset="1" stop-color="#EDE7DE"/>
+    </radialGradient>
+  </defs>
+  <rect width="1000" height="1000" fill="url(#bg)"/>
+
+  <g transform="translate(55 164) scale(1.15)" stroke="#000" stroke-width="7" stroke-linejoin="miter" stroke-miterlimit="6">
+    <!-- T -->
+    <path fill="#FF7A1A" d="M48,127 L352,127 L352,205 L272,205 L280,492 L192,432 L190,205 L134,205 Z"/>
+    <!-- i-Punkt -->
+    <rect fill="#FF7A1A" x="364" y="127" width="64" height="78"/>
+    <!-- weiße Balken -->
+    <path fill="#FFFFFF" d="M366,222 L432,222 L434,440 L364,440 Z"/>
+    <path fill="#FFFFFF" d="M446,222 L500,222 L504,440 L450,440 Z"/>
+    <path fill="#FFFFFF" d="M526,222 L578,222 L576,445 L532,445 Z"/>
+    <!-- t -->
+    <path fill="#FF7A1A" d="M440,127 L584,127 L584,92 L652,152 L706,152 L706,207 L630,207 L632,382 Q634,408 662,408 L726,408 L690,446 L662,446 Q598,446 598,382 L598,207 L440,207 Z"/>
+  </g>
+
+</svg>

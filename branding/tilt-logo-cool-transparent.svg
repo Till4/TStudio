@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1000 1000" width="1000" height="1000">
+  <defs>
+    <!-- Buchstaben (lokale Koordinaten ca. 0..660 x 0..400) -->
+    <g id="O">
+      <path id="pT" d="M0,40 L300,40 L300,110 L225,110 L230,395 L150,340 L150,110 L72,110 Z"/>
+      <path id="pDot" d="M315,40 L375,40 L375,110 L315,110 Z"/>
+      <path id="pt" d="M390,40 L530,40 L530,0 L592,55 L642,55 L642,110 L580,110 L580,312 Q580,342 610,342 L662,342 L626,385 L598,385 Q520,385 520,312 L520,110 L390,110 Z"/>
+    </g>
+    <g id="W">
+      <path id="pB1" d="M315,126 L375,126 L375,380 L315,380 Z"/>
+      <path id="pB2" d="M390,126 L442,126 L446,380 L392,380 Z"/>
+      <path id="pB3" d="M456,126 L505,126 L505,386 L460,386 Z"/>
+    </g>
+
+    <clipPath id="clip">
+      <use href="#pT"/><use href="#pDot"/><use href="#pt"/>
+      <use href="#pB1"/><use href="#pB2"/><use href="#pB3"/>
+    </clipPath>
+
+    <linearGradient id="gO" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="400">
+      <stop offset="0" stop-color="#FFC15A"/>
+      <stop offset="0.35" stop-color="#FF8A1F"/>
+      <stop offset="1" stop-color="#E5420A"/>
+    </linearGradient>
+    <linearGradient id="gW" gradientUnits="userSpaceOnUse" x1="0" y1="120" x2="0" y2="390">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C9CDD3"/>
+    </linearGradient>
+
+    <radialGradient id="bg" cx="50%" cy="48%" r="72%">
+      <stop offset="0" stop-color="#1d1a18"/>
+      <stop offset="1" stop-color="#060606"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FF6A00" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FF6A00" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="stripes" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)">
+      <rect width="22" height="22" fill="none"/>
+      <line x1="0" y1="0" x2="0" y2="22" stroke="#ffffff" stroke-opacity="0.028" stroke-width="8"/>
+    </pattern>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+  </defs>
+
+  
+  <!-- Logo: zentriert, leicht gekippt (TILT) -->
+  <g transform="translate(500 505) scale(1.17) skewX(-9) translate(-331 -195)" stroke-linejoin="miter" stroke-miterlimit="8">
+    <!-- Glow -->
+    <g fill="#FF6A00" opacity="0.55" filter="url(#blur)">
+      <use href="#O"/><use href="#W" fill="#FFB070"/>
+    </g>
+
+    <!-- 3D-Kante (Extrusion nach rechts unten) -->
+    <g>
+      <g transform="translate(18 18)" fill="#0d0400"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(17 17)" fill="#160700"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(16 16)" fill="#1f0a01"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(15 15)" fill="#280d01"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(14 14)" fill="#311001"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(13 13)" fill="#3a1302"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(12 12)" fill="#431602"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(11 11)" fill="#4c1902"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(10 10)" fill="#551c03"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(9 9)" fill="#5d2003"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(8 8)" fill="#662304"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(7 7)" fill="#6f2604"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(6 6)" fill="#782904"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(5 5)" fill="#812c05"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(4 4)" fill="#8a2f05"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(3 3)" fill="#933205"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(2 2)" fill="#9c3506"><use href="#O"/><use href="#W"/></g>
+      <g transform="translate(1 1)" fill="#a53806"><use href="#O"/><use href="#W"/></g>
+    </g>
+
+    <!-- Kontur -->
+    <g fill="#070707" stroke="#070707" stroke-width="9">
+      <use href="#O"/><use href="#W"/>
+    </g>
+
+    <!-- Flächen -->
+    <use href="#O" fill="url(#gO)"/>
+    <use href="#W" fill="url(#gW)"/>
+
+    <!-- Glanz + Schnitt -->
+    <g clip-path="url(#clip)">
+      <polygon points="-60,-60 720,-60 720,40 -60,150" fill="#ffffff" opacity="0.16"/>
+      <line x1="-60" y1="300" x2="720" y2="240" stroke="#070707" stroke-width="7"/>
+      <line x1="-60" y1="305.5" x2="720" y2="245.5" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1.5"/>
+    </g>
+  </g>
+</svg>

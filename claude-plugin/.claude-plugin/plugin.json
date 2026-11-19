@@ -1,0 +1,6 @@
+{
+  "name": "tstudio",
+  "version": "0.1.0",
+  "description": "TStudio-DAW per CLI bedienen: Projekte bearbeiten, Noten/Steps schreiben, Synth- und Effektparameter setzen, offline rendern und Audio analysieren.",
+  "author": { "name": "TStudio" }
+}

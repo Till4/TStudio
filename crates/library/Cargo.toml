@@ -1,0 +1,12 @@
+[package]
+name = "tstudio-library"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tstudio-dsp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+symphonia.workspace = true
+hound.workspace = true
+crossbeam-channel.workspace = true

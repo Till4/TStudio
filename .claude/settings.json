@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "tstudio": {
+      "source": {
+        "source": "directory",
+        "path": "E:/TStudio"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "tstudio@tstudio": true
+  }
+}

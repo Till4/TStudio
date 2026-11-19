@@ -1,0 +1,20 @@
+[package]
+name = "tstudio-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless command line for TStudio projects: edit, render, analyse"
+
+[[bin]]
+name = "tstudio-cli"
+path = "src/main.rs"
+
+[dependencies]
+tstudio-dsp.workspace = true
+tstudio-project.workspace = true
+tstudio-engine.workspace = true
+tstudio-library.workspace = true
+tstudio-fetch.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+directories.workspace = true

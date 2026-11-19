@@ -1,0 +1,11 @@
+[package]
+name = "tstudio-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tstudio-dsp.workspace = true
+tstudio-project.workspace = true
+cpal.workspace = true
+rtrb.workspace = true
+rustysynth.workspace = true

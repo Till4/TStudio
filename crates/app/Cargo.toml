@@ -1,0 +1,25 @@
+[package]
+name = "tstudio"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tstudio"
+path = "src/main.rs"
+
+[dependencies]
+tstudio-dsp.workspace = true
+tstudio-project.workspace = true
+tstudio-engine.workspace = true
+tstudio-library.workspace = true
+tstudio-fetch.workspace = true
+eframe.workspace = true
+egui.workspace = true
+serde.workspace = true
+ron.workspace = true
+serde_json.workspace = true
+rfd.workspace = true
+midir.workspace = true
+directories.workspace = true
+crossbeam-channel.workspace = true
+rtrb.workspace = true

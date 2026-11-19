@@ -1,0 +1,9 @@
+[package]
+name = "tstudio-project"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tstudio-dsp.workspace = true
+serde.workspace = true
+ron.workspace = true
