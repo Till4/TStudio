@@ -44,3 +44,10 @@ fn hits_and_numbered_paths() {
     assert!(numbered_path(&dir, "song Kick", "wav").ends_with("song Kick 02.wav"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn moved_selection_keeps_width_and_stays_in_file() {
+    assert_eq!(moved_selection((100, 300), 500, 1000), (500, 700));
+    assert_eq!(moved_selection((100, 300), 900, 1000), (800, 1000));
+    assert_eq!(moved_selection((100, 300), 0, 1000), (0, 200));
+}

@@ -4,6 +4,9 @@
 //! Keys (Fetch view, file loaded): Space play/stop · ←/→ previous/next hit · Shift+←/→ end to
 //! previous/next hit · Enter save · 1–9 save as category · L loop · I isolation A/B · Z zoom ·
 //! Shift+Z whole file · H save every hit in the selection · Esc stop.
+//!
+//! Waveform mouse: drag inside the selection moves the window, drag outside (or Shift+drag) makes
+//! a new one, drag an edge adjusts it, click plays from there, double click selects the hit.
 
 use crate::app::{TStudio, View};
 use crate::samples::Peaks;
@@ -43,10 +46,19 @@ pub fn load(path: &Path, sensitivity: f32) -> Result<Loaded, String> {
     Ok(Loaded { data, peaks, hits })
 }
 
+/// Moves a selection to `start`, keeping its width and staying inside `0..len`.
+fn moved_selection(sel: (usize, usize), start: usize, len: usize) -> (usize, usize) {
+    let width = sel.1.saturating_sub(sel.0);
+    let start = start.min(len.saturating_sub(width));
+    (start, start + width)
+}
+
 enum TrimDrag {
     Start,
     End,
     New(usize),
+    /// Whole window moves; holds the grab offset (samples from the window start to the pointer).
+    Move(usize),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -417,16 +429,21 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
         t.hits.iter().copied().filter(|h| (*h as f64 - s as f64).abs() < px).min_by_key(|h| (*h as i64 - s as i64).abs()).unwrap_or(s)
     };
 
-    // selection: drag = select, edges = adjust, click = play from here, double click = hit
+    // selection: drag inside = move window, drag outside (or Shift) = new, edges = adjust,
+    // click = play from here, double click = hit
+    let shift = ui.input(|i| i.modifiers.shift);
     if let Some(pt) = resp.interact_pointer_pos() {
         let s = s_of(pt.x) as usize;
         if resp.drag_started() {
             let ds = (pt.x - x_of(t.sel.0 as f64)).abs();
             let de = (pt.x - x_of(t.sel.1 as f64)).abs();
+            let whole = t.sel.0 == 0 && t.sel.1 >= len as usize;
             t.drag = Some(if ds < 8.0 && ds <= de {
                 TrimDrag::Start
             } else if de < 8.0 {
                 TrimDrag::End
+            } else if !shift && !whole && s > t.sel.0 && s < t.sel.1 {
+                TrimDrag::Move(s - t.sel.0)
             } else {
                 TrimDrag::New(snap(t, s))
             });
@@ -437,6 +454,11 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
                 Some(TrimDrag::Start) => t.sel.0 = s.min(t.sel.1.saturating_sub(1)),
                 Some(TrimDrag::End) => t.sel.1 = s.max(t.sel.0 + 1),
                 Some(TrimDrag::New(a)) => t.sel = (a.min(s), a.max(s).max(a.min(s) + 1)),
+                Some(TrimDrag::Move(off)) => {
+                    // the grab offset keeps the window under the pointer; snap its start edge
+                    let start = snap(t, (s_of(pt.x) as usize).saturating_sub(off));
+                    t.sel = moved_selection(t.sel, start, len as usize);
+                }
                 None => {}
             }
         }
@@ -448,7 +470,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
         }
     }
     if resp.drag_stopped() {
-        if matches!(t.drag, Some(TrimDrag::New(_))) {
+        if matches!(t.drag, Some(TrimDrag::New(_) | TrimDrag::Move(_))) {
             acts.push(Act::PlaySel);
         }
         t.drag = None;
