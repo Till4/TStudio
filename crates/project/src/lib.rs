@@ -11,6 +11,7 @@ use tstudio_dsp::synth::SynthParams;
 pub mod automation;
 pub mod history;
 pub mod meter;
+pub mod midi;
 pub mod templates;
 pub mod tempo;
 pub mod tracks;

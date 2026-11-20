@@ -277,6 +277,7 @@ impl TStudio {
                     ui.close_menu();
                     self.export.open = true;
                 }
+                ui.menu_button("MIDI", |ui| self.midi_menu(ui));
                 if ui.button("Backups wiederherstellen…").clicked() {
                     ui.close_menu();
                     self.backups.show_window = true;

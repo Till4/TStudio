@@ -2,7 +2,9 @@
 
 use crate::*;
 
+mod midi;
 mod timeline;
+pub(crate) use midi::*;
 pub(crate) use timeline::*;
 
 #[derive(Parser)]
@@ -185,6 +187,9 @@ pub(crate) enum Cmd {
     /// Song-Marker (Intro, Break, Drop …) – überall statt Taktnummern nutzbar
     #[command(subcommand)]
     Marker(MarkerCmd),
+    /// MIDI-Dateien: Pattern/Song exportieren, .mid als Pattern importieren
+    #[command(subcommand)]
+    Midi(MidiCmd),
     /// Song-Abschnitte: Takte kopieren, leeren, einfügen, löschen (Takt oder Markername)
     #[command(subcommand)]
     Section(SectionCmd),

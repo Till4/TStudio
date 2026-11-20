@@ -19,6 +19,7 @@ use tstudio_project::{AudioClip, ClipKind, History, Id, Instrument, Note, Projec
 mod playback;
 mod project_io;
 mod chrome;
+mod midi_file;
 mod recovery;
 mod templates;
 

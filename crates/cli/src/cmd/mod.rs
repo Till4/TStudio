@@ -14,6 +14,7 @@ mod marker;
 mod section;
 mod tempo;
 mod meter;
+mod midi;
 
 pub(crate) use channel::*;
 pub(crate) use pattern::*;
@@ -27,6 +28,7 @@ pub(crate) use marker::*;
 pub(crate) use section::*;
 pub(crate) use tempo::*;
 pub(crate) use meter::*;
+pub(crate) use midi::*;
 
 pub(crate) fn run(cmd: Cmd) -> R<Value> {
     match cmd {
@@ -315,6 +317,7 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             Ok(json!({"ok": true, "out": abs(&output), "before": f, "after": after, "shift_semitones": (semis * 100.0).round() / 100.0, "duration_s": out.duration_secs()}))
         }
         Cmd::Marker(c) => marker_cmd(c),
+        Cmd::Midi(c) => midi_cmd(c),
         Cmd::Section(c) => section_cmd(c),
         Cmd::Tempo(c) => tempo_cmd(c),
         Cmd::Meter(c) => meter_cmd(c),
