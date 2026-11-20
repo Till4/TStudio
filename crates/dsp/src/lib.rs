@@ -16,6 +16,7 @@ pub mod osc;
 pub mod sample;
 pub mod sampler;
 pub mod spectrum;
+pub mod slicer;
 pub mod stretch;
 pub mod synth;
 pub mod synth_presets;

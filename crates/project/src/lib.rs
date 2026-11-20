@@ -15,6 +15,7 @@ pub mod meter;
 pub mod midi;
 pub mod templates;
 pub mod tempo;
+pub mod steps;
 pub mod takes;
 pub mod tracks;
 pub use automation::{AutoPoint, AutoTarget, AutomationClip};

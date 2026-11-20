@@ -7,6 +7,7 @@ impl TStudio {
         if ctx.wants_keyboard_input() {
             return;
         }
+        let f11 = ctx.input(|i| i.key_pressed(Key::F11));
         let (space, z, y, s, o, n, l, f5, f6, f7, f8, f9, f10, ctrl, shift, r) = ctx.input(|i| {
             (
                 i.key_pressed(Key::Space),
@@ -59,7 +60,7 @@ impl TStudio {
         } else if r && ctrl {
             self.recording = !self.recording;
         }
-        for (pressed, v) in [(f5, View::Playlist), (f6, View::Rack), (f7, View::PianoRoll), (f8, View::Instrument), (f9, View::Mixer), (f10, View::Fetch)] {
+        for (pressed, v) in [(f5, View::Playlist), (f6, View::Rack), (f7, View::PianoRoll), (f8, View::Instrument), (f9, View::Mixer), (f10, View::Fetch), (f11, View::DrumPad)] {
             if pressed {
                 self.view = v;
             }
@@ -332,6 +333,7 @@ impl TStudio {
                     ("L", "Pattern ↔ Song"),
                     ("F5 / F6 / F7", "Playlist / Channel Rack / Piano Roll"),
                     ("F8 / F9 / F10", "Instrument / Mixer / Sample-Cutter"),
+                    ("F11", "Drum Pads (Pads + Step-Sequencer, Slicer)"),
                     ("Strg+Z / Strg+Y", "Rückgängig / Wiederholen"),
                     ("Piano Roll: Strg+Ziehen", "Auswahlrechteck"),
                     ("Piano Roll: Entf, Strg+A/C/V/D, ↑↓, Q", "Löschen, Auswahl, Kopieren, Einfügen, Duplizieren, Transponieren, Quantisieren"),

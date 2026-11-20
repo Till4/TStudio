@@ -356,7 +356,6 @@ fn sampler_ui(app: &mut TStudio, ui: &mut Ui, ci: usize) {
     }
     if let (Some(action), Some(l)) = (chop_action, loaded.as_ref()) {
         let sens = app.instrument_ui.chop_sensitivity;
-        let len = l.data.len().max(1);
         let cid = app.project.channels[ci].id;
         let total_ticks = app.project.secs_to_ticks(l.data.duration_secs());
         let pid = app.current_pattern;
@@ -364,14 +363,12 @@ fn sampler_ui(app: &mut TStudio, ui: &mut Ui, ci: usize) {
         if let Instrument::Sampler(s) = &mut app.project.channels[ci].instrument {
             match action {
                 ChopAction::Transients => {
-                    let mono = l.data.mono();
-                    let pos = tstudio_dsp::analysis::transients(&mono, l.data.sample_rate, sens, 70.0);
-                    s.params.slices = pos.iter().map(|p| *p as f32 / len as f32).collect();
-                    s.params.mode = SamplerMode::Chop;
+                    let sl = tstudio_dsp::slicer::transient_slices(&l.data, sens, s.params.start, s.params.end);
+                    tstudio_dsp::slicer::apply_slices(&mut s.params, sl, None);
                 }
                 ChopAction::Even(n) => {
-                    s.params.slices = (0..n).map(|i| s.params.start + (s.params.end - s.params.start) * i as f32 / n as f32).collect();
-                    s.params.mode = SamplerMode::Chop;
+                    let sl = tstudio_dsp::slicer::even_slices(s.params.start, s.params.end, n);
+                    tstudio_dsp::slicer::apply_slices(&mut s.params, sl, None);
                 }
                 ChopAction::Clear => {
                     s.params.slices.clear();

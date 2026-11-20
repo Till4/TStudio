@@ -234,6 +234,8 @@ das offene Projekt zu ändern). `new` verweigert Dateien, die in TStudio offen s
   (kurze tiefe Noten, z.B. C1/C2).
 - Chop: `chop loop.wav --even 8` → `fractions` als `channels.N.instrument.Sampler.params.slices=[…]` setzen und `params.mode="Chop"`;
   Slice i liegt dann auf Taste `slice_root + i` (Standard C4 = 60).
+  Kürzer: `channel slice song.tsp Break --even 16 --root C2` bzw. `--sensitivity 0.5` (Transienten) setzt Chop-Modus,
+  `slices` und `slice_root` direkt; danach `notes steps … --key C2` (Slice 1), `C#2` (Slice 2) … In der App: Drum Pads (F11).
 - **Schranz / Hard Techno** (150–160 BPM): Kick = TSynth-Preset "Schranz Kick"/"Hardtekk Kick"/"Industrial Kick" (beliebige Taste; per
   `channel kick … --tune <Grundton der Tonart>` stimmen, prüfen mit `render` + `analyze` → `fundamental`) oder Kick-Sample;
   "Rumble Kick" bringt einen eigenen Rumble mit, alternativ:

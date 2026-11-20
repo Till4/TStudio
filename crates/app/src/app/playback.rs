@@ -38,7 +38,7 @@ impl TStudio {
             self.send(Command::Stop);
         } else {
             match self.view {
-                View::Rack | View::PianoRoll | View::Instrument => self.song_mode = false,
+                View::Rack | View::PianoRoll | View::Instrument | View::DrumPad => self.song_mode = false,
                 View::Playlist => self.song_mode = true,
                 _ => {}
             }

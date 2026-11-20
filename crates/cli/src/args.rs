@@ -369,6 +369,19 @@ pub(crate) enum ChannelCmd {
         #[arg(long)]
         clear: bool,
     },
+    /// Sample eines Sampler-Kanals slicen (Chop-Modus): `--even N` gleiche Teile oder Transienten
+    /// (`--sensitivity 0..1`, Standard 0.5). Slice i liegt auf Taste `--root` + i (Standard: bisheriges slice_root)
+    Slice {
+        project: PathBuf,
+        channel: String,
+        #[arg(long, conflicts_with = "sensitivity")]
+        even: Option<usize>,
+        #[arg(long)]
+        sensitivity: Option<f32>,
+        /// erste Taste, z.B. C2 oder 36
+        #[arg(long)]
+        root: Option<String>,
+    },
     /// TSynth-Kick-Engine einschalten und den Grundton stimmen (`--tune F1`, Zahl = MIDI-Note)
     Kick {
         project: PathBuf,

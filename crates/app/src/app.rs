@@ -32,16 +32,18 @@ pub enum View {
     Mixer,
     Instrument,
     Fetch,
+    DrumPad,
 }
 
 impl View {
-    pub const ALL: [(View, &'static str, &'static str); 6] = [
+    pub const ALL: [(View, &'static str, &'static str); 7] = [
         (View::Playlist, "Playlist", "F5"),
         (View::Rack, "Channel Rack", "F6"),
         (View::PianoRoll, "Piano Roll", "F7"),
         (View::Mixer, "Mixer", "F9"),
         (View::Instrument, "Instrument", "F8"),
         (View::Fetch, "Sample-Cutter", "F10"),
+        (View::DrumPad, "Drum Pads", "F11"),
     ];
 }
 
@@ -71,6 +73,7 @@ pub struct TStudio {
     pub piano: ui::piano_roll::PianoState,
     pub mixer_ui: ui::mixer::MixerState,
     pub instrument_ui: ui::instrument::InstrumentState,
+    pub drumpad: ui::drumpad::DrumPadState,
     pub fetch: ui::fetch::FetchState,
     pub export: ui::export::ExportState,
     pub show_settings: bool,
@@ -140,6 +143,7 @@ impl TStudio {
             piano: Default::default(),
             mixer_ui: Default::default(),
             instrument_ui: Default::default(),
+            drumpad: Default::default(),
             fetch,
             export: Default::default(),
             show_settings: false,
@@ -372,6 +376,7 @@ impl eframe::App for TStudio {
             View::Mixer => ui::mixer::show(self, ui),
             View::Instrument => ui::instrument::show(self, ui),
             View::Fetch => ui::fetch::show(self, ui),
+            View::DrumPad => ui::drumpad::show(self, ui),
         });
         ui::settings::window(self, ctx);
         ui::export::window(self, ctx);

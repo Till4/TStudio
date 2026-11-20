@@ -1,4 +1,5 @@
 pub mod cutter;
+pub mod drumpad;
 pub mod export;
 pub mod fetch;
 pub mod instrument;
