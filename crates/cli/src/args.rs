@@ -29,13 +29,18 @@ pub(crate) enum Cmd {
     /// Neues Projekt anlegen (mit TSynth-Kanal und Pattern 1)
     New {
         project: PathBuf,
-        #[arg(long, default_value_t = 140.0)]
-        bpm: f64,
+        /// Tempo (Standard 140, mit --template das der Vorlage)
+        #[arg(long)]
+        bpm: Option<f64>,
         #[arg(long)]
         name: Option<String>,
         /// ohne Standard-Kanal
         #[arg(long)]
         empty: bool,
+        /// aus Vorlage: eigene (TStudio-Vorlagenordner) oder mitgelieferte, z.B. "Schranz 155"
+        /// (Tempo der Vorlage, außer --bpm ist angegeben)
+        #[arg(long, conflicts_with = "empty")]
+        template: Option<String>,
         /// vorhandene Datei überschreiben
         #[arg(long)]
         force: bool,

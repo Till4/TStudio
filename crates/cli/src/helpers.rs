@@ -5,6 +5,11 @@ use crate::*;
 pub(crate) type R<T> = Result<T, String>;
 
 /// `dj_name` from TStudio's settings.ron (empty if not set).
+/// TStudio's user template folder (same place the app uses).
+pub(crate) fn templates_dir() -> PathBuf {
+    directories::ProjectDirs::from("de", "TStudio", "TStudio").map(|d| d.config_dir().join("templates")).unwrap_or_else(|| std::env::temp_dir().join("TStudio").join("templates"))
+}
+
 pub(crate) fn settings_dj_name() -> String {
     let Some(dir) = directories::ProjectDirs::from("de", "TStudio", "TStudio") else { return String::new() };
     let Ok(s) = std::fs::read_to_string(dir.config_dir().join("settings.ron")) else { return String::new() };

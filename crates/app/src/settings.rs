@@ -94,6 +94,10 @@ impl Paths {
     pub fn presets_dir(&self) -> PathBuf {
         self.config_dir.join("presets")
     }
+    /// User project templates (`<name>.tsp`).
+    pub fn templates_dir(&self) -> PathBuf {
+        self.config_dir.join("templates")
+    }
 }
 
 impl Settings {

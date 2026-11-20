@@ -30,7 +30,7 @@ pub(crate) use meter::*;
 
 pub(crate) fn run(cmd: Cmd) -> R<Value> {
     match cmd {
-        Cmd::New { project, bpm, name, empty, force } => {
+        Cmd::New { project, bpm, name, empty, template, force } => {
             if live::is_keyword(&project) {
                 return Err("`new` braucht einen Dateinamen; danach `open <datei>` lädt es in TStudio".into());
             }
@@ -40,7 +40,15 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             if project.exists() && !force {
                 return Err(format!("{} existiert schon (--force überschreibt)", project.display()));
             }
-            let mut p = if empty {
+            let mut p = if let Some(t) = &template {
+                let dir = templates_dir();
+                let found = templates::find(&dir, t).ok_or_else(|| {
+                    let mut all: Vec<String> = templates::list_user_templates(&dir).into_iter().map(|(n, _)| n).collect();
+                    all.extend(templates::builtin_names().into_iter().map(String::from));
+                    format!("Vorlage '{t}' nicht gefunden (vorhanden: {})", all.join(", "))
+                })?;
+                templates::instantiate(found)
+            } else if empty {
                 let mut p = Project::default();
                 let id = p.alloc_id();
                 p.patterns.push(tstudio_project::Pattern { id, ..Default::default() });
@@ -48,7 +56,11 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             } else {
                 Project::new_default()
             };
-            p.bpm = bpm;
+            if let Some(b) = bpm {
+                p.bpm = b;
+            } else if template.is_none() {
+                p.bpm = 140.0;
+            }
             p.name = name.unwrap_or_else(|| project.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("Untitled".into()));
             save(&project, &mut p)?;
             Ok(json!({"ok": true, "project": abs(&project), "info": info(&p)}))

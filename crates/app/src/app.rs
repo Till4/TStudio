@@ -19,6 +19,7 @@ use tstudio_project::{AudioClip, ClipKind, History, Id, Instrument, Note, Projec
 mod playback;
 mod project_io;
 mod chrome;
+mod templates;
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +91,8 @@ pub struct TStudio {
     last_disk_check: Instant,
     /// lets `tstudio-cli live …` edit the project open in this window
     live: Option<LiveServer>,
+    /// name typed in the "Als Vorlage speichern" dialog (Some = dialog open)
+    template_dialog: Option<String>,
 }
 
 impl TStudio {
@@ -153,6 +156,7 @@ impl TStudio {
             disk_stamp: None,
             last_disk_check: Instant::now(),
             live,
+            template_dialog: None,
             settings,
         };
         if let Some(p) = open {
@@ -374,6 +378,7 @@ impl eframe::App for TStudio {
         ui::settings::window(self, ctx);
         ui::export::window(self, ctx);
         ui::record::window(self, ctx);
+        self.template_window(ctx);
         widgets::draw_drag_ghost(ctx);
         if !ctx.input(|i| i.pointer.any_down()) {
             egui::DragAndDrop::clear_payload(ctx);

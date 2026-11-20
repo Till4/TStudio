@@ -241,6 +241,7 @@ impl TStudio {
                     ui.close_menu();
                     self.new_project();
                 }
+                ui.menu_button("Neu aus Vorlage", |ui| self.template_menu(ui));
                 if ui.button("Öffnen…  (Strg+O)").clicked() {
                     ui.close_menu();
                     self.open_dialog();
@@ -266,6 +267,10 @@ impl TStudio {
                 if ui.button("Speichern unter…  (Strg+Shift+S)").clicked() {
                     ui.close_menu();
                     self.save_as();
+                }
+                if ui.button("Als Vorlage speichern…").clicked() {
+                    ui.close_menu();
+                    self.ask_template_name();
                 }
                 ui.separator();
                 if ui.button("Exportieren (WAV/MP3)…").clicked() {

@@ -27,6 +27,7 @@ use tstudio_dsp::synth::{ModDest, ModSlot, ModSource, SynthParams};
 use tstudio_dsp::{note_name, SampleData};
 use tstudio_engine::{soundfont_presets, PlayMode, Sf2Preset};
 use tstudio_project::automation::field_range;
+use tstudio_project::templates;
 use tstudio_project::{
     AudioClip, AutoPoint, AutomationClip, ClipKind, FxSlot, Id, Instrument, MixerSend, Note, Project, SamplerInstrument, SoundFontInstrument, StretchSettings, MAX_FX_SLOTS, PPQ,
 };
