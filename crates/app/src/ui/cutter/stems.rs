@@ -1,4 +1,4 @@
-//! Stem separation bar and job handling of the cutter view.
+//! "Stems trennen" row of the sample cutter (Demucs on the CPU).
 
 use super::*;
 

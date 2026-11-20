@@ -4,6 +4,14 @@
 //! Keys (Fetch view, file loaded): Space play/stop · ←/→ previous/next hit · Shift+←/→ end to
 //! previous/next hit · Enter save · 1–9 save as category · L loop · I isolation A/B · Z zoom ·
 //! Shift+Z whole file · H save every hit in the selection · Esc stop.
+//!
+//! Fine nudge: Ctrl+←/→ moves the whole window by one beat (selection width / `beats`, i.e. the
+//! loop's own grid; for the whole file one beat of the project tempo) · Ctrl+Shift+←/→ moves it
+//! by 1 ms. Markers: M stores the selection as a named marker · Shift+M saves every marker ·
+//! `,` / `.` jump to the previous / next marker (list with rename/delete under the waveform).
+//!
+//! Waveform mouse: drag inside the selection moves the window, drag outside (or Shift+drag) makes
+//! a new one, drag an edge adjusts it, click plays from there, double click selects the hit.
 
 use crate::app::{TStudio, View};
 use crate::samples::Peaks;
@@ -16,13 +24,22 @@ use tstudio_dsp::isolate::{log_freqs, spectrum_db, IsolateParams, StereoMode, SL
 use tstudio_dsp::SampleData;
 use tstudio_library::{unique_path, write_wav, WavFormat};
 
-mod stems;
+mod actions;
+mod edit;
+mod keys;
+mod markers;
 mod panels;
+mod stems;
 #[cfg(test)]
 mod tests;
 
-use stems::*;
+pub use actions::cut_dir;
+use actions::*;
+use edit::*;
+use keys::*;
+use markers::*;
 use panels::*;
+use stems::*;
 
 pub const CATEGORIES: [&str; 9] = ["Kick", "Snare", "Clap", "Hat", "Perc", "Bass", "Vocal", "Loop", "FX"];
 const WAVE_COLOR: Color32 = Color32::from_rgb(110, 180, 240);
@@ -47,6 +64,8 @@ enum TrimDrag {
     Start,
     End,
     New(usize),
+    /// Whole window moves; holds the grab offset (samples from the window start to the pointer).
+    Move(usize),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -94,6 +113,10 @@ pub struct Trim {
     pub saved: Vec<PathBuf>,
     pub loop_play: bool,
     playing: Option<Play>,
+    /// named selections of the loaded file (M), saved together with Shift+M
+    pub markers: Vec<CutMarker>,
+    /// marker whose name is being edited in the list
+    marker_edit: Option<usize>,
 }
 
 impl Default for Trim {
@@ -126,6 +149,8 @@ impl Default for Trim {
             saved: Vec::new(),
             loop_play: false,
             playing: None,
+            markers: Vec::new(),
+            marker_edit: None,
         }
     }
 }
@@ -145,6 +170,8 @@ impl Trim {
         self.spectrum = None;
         self.playing = None;
         self.drag = None;
+        self.markers.clear();
+        self.marker_edit = None;
     }
 
     fn sr(&self) -> f64 {
@@ -218,103 +245,14 @@ impl Trim {
     }
 }
 
-/// Nearest zero crossing of the mono sum within `radius` samples.
-fn zero_near(d: &SampleData, i: usize, radius: usize) -> usize {
-    let m = |k: usize| d.left[k] + d.right[k];
-    if d.len() < 2 || i == 0 || i >= d.len() {
-        return i.min(d.len());
-    }
-    for r in 0..radius {
-        for k in [i.saturating_sub(r), i + r] {
-            if k >= 1 && k < d.len() && (m(k - 1) <= 0.0) != (m(k) <= 0.0) {
-                return k;
-            }
-        }
-    }
-    i
-}
-
-/// Audio of [a, b) with isolation, tail trim, fades and normalisation applied.
-fn render_range(t: &Trim, a: usize, b: usize) -> Option<SampleData> {
-    let d = t.data.as_ref()?;
-    let (mut a, mut b) = (a.min(b), a.max(b).min(d.len()));
-    let zr = (d.sample_rate / 1000) as usize;
-    a = zero_near(d, a, zr);
-    b = zero_near(d, b, zr).max(a + 1).min(d.len());
-    if b <= a + 1 {
-        return None;
-    }
-    let mut out = match t.processed_now() {
-        Some((_, full, _)) => full.slice(a, b),
-        None if t.iso_active() => t.iso.process_range(d, a, b),
-        None => d.slice(a, b),
-    };
-    if t.trim_tail {
-        // drop trailing audio below -60 dBFS (keep 5 ms)
-        let thr = 0.001f32;
-        let keep = (d.sample_rate / 200) as usize;
-        if let Some(last) = (0..out.len()).rev().find(|i| out.left[*i].abs() > thr || out.right[*i].abs() > thr) {
-            let end = (last + keep).min(out.len()).max(1);
-            out.left.truncate(end);
-            out.right.truncate(end);
-        }
-    }
-    let sr = d.sample_rate as f32;
-    out.fade((t.fade_in_ms * 0.001 * sr) as usize, (t.fade_out_ms * 0.001 * sr) as usize);
-    if t.normalize {
-        out.normalize(0.98);
-    }
-    Some(out)
-}
-
-/// `dir/stem NN.ext` with the first free number.
-fn numbered_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
-    let clean: String = stem.chars().map(|c| if r#"<>:"/\|?*"#.contains(c) || c.is_control() { '_' } else { c }).collect();
-    let clean = clean.trim().to_string();
-    for n in 1..10000 {
-        let p = dir.join(format!("{clean} {n:02}.{ext}"));
-        if !p.exists() {
-            return p;
-        }
-    }
-    unique_path(dir, &clean, ext)
-}
-
-pub fn cut_dir(app: &TStudio) -> PathBuf {
-    app.settings.output_dir().join("Cuts")
-}
-
-/// Makes sure saved cuts show up in the library.
-fn ensure_in_library(app: &mut TStudio) {
-    let dir = cut_dir(app);
-    if !app.settings.library_roots.iter().any(|r| dir.starts_with(r)) {
-        let base = app.settings.output_dir();
-        app.settings.library_roots.push(base);
-        app.settings.save(&app.paths.settings());
-    }
-    app.library.rescan(&app.settings);
-}
-
-fn save_range(app: &TStudio, a: usize, b: usize, cat: Option<usize>) -> Result<PathBuf, String> {
-    let t = &app.fetch.trim;
-    let d = render_range(t, a, b).ok_or("Leere Auswahl")?;
-    let base = cut_dir(app);
-    let (dir, stem) = match cat {
-        Some(c) => (base.join(CATEGORIES[c]), format!("{} {}", t.base_name(), CATEGORIES[c])),
-        None => (base, t.base_name()),
-    };
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = numbered_path(&dir, &stem, "wav");
-    write_wav(&path, &d, WavFormat::Pcm24)?;
-    Ok(path)
-}
-
 enum Act {
     PlaySel,
     PlayFrom(usize),
     Stop,
     Save(Option<usize>),
     SaveHits,
+    /// every marker as its own file
+    SaveMarkers,
     SaveFull,
     SaveMp3,
     Lossless,
@@ -417,16 +355,21 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
         t.hits.iter().copied().filter(|h| (*h as f64 - s as f64).abs() < px).min_by_key(|h| (*h as i64 - s as i64).abs()).unwrap_or(s)
     };
 
-    // selection: drag = select, edges = adjust, click = play from here, double click = hit
+    // selection: drag inside = move window, drag outside (or Shift) = new, edges = adjust,
+    // click = play from here, double click = hit
+    let shift = ui.input(|i| i.modifiers.shift);
     if let Some(pt) = resp.interact_pointer_pos() {
         let s = s_of(pt.x) as usize;
         if resp.drag_started() {
             let ds = (pt.x - x_of(t.sel.0 as f64)).abs();
             let de = (pt.x - x_of(t.sel.1 as f64)).abs();
+            let whole = t.sel.0 == 0 && t.sel.1 >= len as usize;
             t.drag = Some(if ds < 8.0 && ds <= de {
                 TrimDrag::Start
             } else if de < 8.0 {
                 TrimDrag::End
+            } else if !shift && !whole && s > t.sel.0 && s < t.sel.1 {
+                TrimDrag::Move(s - t.sel.0)
             } else {
                 TrimDrag::New(snap(t, s))
             });
@@ -437,6 +380,11 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
                 Some(TrimDrag::Start) => t.sel.0 = s.min(t.sel.1.saturating_sub(1)),
                 Some(TrimDrag::End) => t.sel.1 = s.max(t.sel.0 + 1),
                 Some(TrimDrag::New(a)) => t.sel = (a.min(s), a.max(s).max(a.min(s) + 1)),
+                Some(TrimDrag::Move(off)) => {
+                    // the grab offset keeps the window under the pointer; snap its start edge
+                    let start = snap(t, (s_of(pt.x) as usize).saturating_sub(off));
+                    t.sel = moved_selection(t.sel, start, len as usize);
+                }
                 None => {}
             }
         }
@@ -448,7 +396,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
         }
     }
     if resp.drag_stopped() {
-        if matches!(t.drag, Some(TrimDrag::New(_))) {
+        if matches!(t.drag, Some(TrimDrag::New(_) | TrimDrag::Move(_))) {
             acts.push(Act::PlaySel);
         }
         t.drag = None;
@@ -475,6 +423,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
         let x = x_of(*h as f64);
         p.line_segment([pos2(x, rect.bottom() - 9.0), pos2(x, rect.bottom())], Stroke::new(1.5, HIT_COLOR));
     }
+    paint_markers(&p, rect, &t.markers, &x_of);
     let (a, b) = (x_of(t.sel.0 as f64), x_of(t.sel.1 as f64));
     p.rect_filled(Rect::from_min_max(rect.min, pos2(a.clamp(rect.left(), rect.right()), rect.bottom())), 0.0, Color32::from_black_alpha(150));
     p.rect_filled(Rect::from_min_max(pos2(b.clamp(rect.left(), rect.right()), rect.top()), rect.max), 0.0, Color32::from_black_alpha(150));
@@ -519,83 +468,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
     }
 
     // ------------------------------------------------------------ keyboard
-    if !ui.ctx().wants_keyboard_input() {
-        let (keys, shift, ctrl) = ui.input(|i| {
-            let k = [
-                Key::Space, Key::Enter, Key::ArrowLeft, Key::ArrowRight, Key::L, Key::I, Key::Z, Key::H, Key::Escape, Key::A,
-            ]
-            .map(|k| i.key_pressed(k));
-            (k, i.modifiers.shift, i.modifiers.command)
-        });
-        let nums = ui.input(|i| [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6, Key::Num7, Key::Num8, Key::Num9].map(|k| i.key_pressed(k)));
-        let [space, enter, left, right, l, iso, z, h, esc, a] = keys;
-        if space {
-            acts.push(if t.playing.is_some() { Act::Stop } else { Act::PlaySel });
-        }
-        if esc {
-            acts.push(Act::Stop);
-        }
-        if enter && !ctrl {
-            acts.push(Act::Save(Some(t.category)));
-        }
-        for (k, pressed) in nums.iter().enumerate() {
-            if *pressed && !ctrl {
-                t.category = k;
-                acts.push(Act::Save(Some(k)));
-            }
-        }
-        if right && !shift {
-            if let Some(n) = t.next_hit_after(t.sel.0) {
-                t.sel = (n, t.next_hit_after(n).unwrap_or(data.len()));
-                t.reveal_sel();
-                acts.push(Act::PlaySel);
-            }
-        }
-        if left && !shift {
-            if let Some(n) = t.prev_hit_before(t.sel.0) {
-                t.sel = (n, t.next_hit_after(n).unwrap_or(data.len()));
-                t.reveal_sel();
-                acts.push(Act::PlaySel);
-            }
-        }
-        if right && shift {
-            t.sel.1 = t.next_hit_after(t.sel.1).unwrap_or(data.len());
-            t.reveal_sel();
-            acts.push(Act::PlaySel);
-        }
-        if left && shift {
-            if let Some(n) = t.prev_hit_before(t.sel.1).filter(|n| *n > t.sel.0) {
-                t.sel.1 = n;
-                acts.push(Act::PlaySel);
-            }
-        }
-        if l {
-            t.loop_play = !t.loop_play;
-            if t.playing.is_some() {
-                acts.push(Act::PlaySel);
-            }
-        }
-        if iso {
-            t.iso_on = !t.iso_on;
-            t.iso_changed = Some(now);
-            if t.playing.is_some() {
-                acts.push(Act::PlaySel);
-            }
-        }
-        if z && !shift {
-            let pad = ((t.sel.1 - t.sel.0) as f64 * 0.08).max(32.0);
-            t.view = ((t.sel.0 as f64 - pad).max(0.0), (t.sel.1 as f64 + pad).min(len));
-        }
-        if z && shift {
-            t.view = (0.0, len);
-        }
-        if h {
-            acts.push(Act::SaveHits);
-        }
-        if a && ctrl {
-            t.sel = (0, data.len());
-        }
-    }
+    handle_keys(ui, t, data.len(), app.project.bpm, now, &mut acts);
 
     // ------------------------------------------------------------ transport row
     let sel_len = t.secs(t.sel.1.saturating_sub(t.sel.0));
@@ -672,7 +545,8 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, loading: bool) {
         save_panel(app, &mut cols[0], &mut acts);
         iso_panel(app, &mut cols[1], &mut acts, now, pointer_down);
     });
-    ui.weak("Tasten: Leertaste spielen · ←/→ Hit für Hit · Shift+←/→ Ende verlängern/kürzen · 1–9 als Kategorie speichern · Enter speichern · H alle Hits · L Loop · I Isolieren an/aus · Z Zoom · Doppelklick = Hit wählen · Klick = ab hier hören");
+    markers_panel(app, ui, &mut acts);
+    ui.weak("Tasten: Leertaste spielen · ←/→ Hit für Hit · Shift+←/→ Ende verlängern/kürzen · Strg+←/→ Auswahl um einen Beat schieben (Strg+Shift fein) · M Marker setzen · Shift+M alle Marker speichern · ,/. Marker wechseln · 1–9 als Kategorie speichern · Enter speichern · H alle Hits · L Loop · I Isolieren an/aus · Z Zoom · Doppelklick = Hit wählen · Klick = ab hier hören");
 
     // background isolation of the whole file (for the waveform and instant saves)
     let t = &mut app.fetch.trim;
