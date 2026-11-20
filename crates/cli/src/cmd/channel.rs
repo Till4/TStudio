@@ -81,6 +81,43 @@ pub(crate) fn channel_cmd(c: ChannelCmd) -> R<Value> {
             save(&project, &mut p)?;
             Ok(json!({"ok": true, "channel": i, "mod_matrix": matrix, "macros": macros, "set_macro_with": format!("channels.{i}.instrument.Synth.macro1=0.7")}))
         }
+        ChannelCmd::Slice { project, channel, even, sensitivity, root } => {
+            let mut p = load(&project)?;
+            let i = channel_idx(&p, &channel)?;
+            let root = match &root {
+                Some(r) => Some(match r.trim().parse::<u8>() {
+                    Ok(n) => n.min(127),
+                    Err(_) => spec::parse_key(r)?,
+                }),
+                None => None,
+            };
+            let Instrument::Sampler(s) = &mut p.channels[i].instrument else { return Err(format!("Kanal {i} ist kein Sampler")) };
+            let path = s.sample.clone().ok_or_else(|| format!("Sampler-Kanal {i} hat kein Sample"))?;
+            let (start, end) = (s.params.start, s.params.end);
+            let (slices, how) = match even {
+                Some(n) => (tstudio_dsp::slicer::even_slices(start, end, n.clamp(1, 128)), format!("even {n}")),
+                None => {
+                    let sens = sensitivity.unwrap_or(0.5).clamp(0.0, 1.0);
+                    let d = audio::load(&path)?;
+                    (tstudio_dsp::slicer::transient_slices(&d, sens, start, end), format!("transients {sens}"))
+                }
+            };
+            let n = tstudio_dsp::slicer::apply_slices(&mut s.params, slices, root);
+            s.params.mono = true;
+            let (r, fractions) = (s.params.slice_root, s.params.slices.clone());
+            save(&project, &mut p)?;
+            Ok(json!({
+                "ok": true,
+                "channel": i,
+                "mode": "Chop",
+                "method": how,
+                "slices": n,
+                "slice_root": r,
+                "keys": if n > 0 { json!([note_name(r), note_name(r + (n - 1) as u8)]) } else { json!([]) },
+                "fractions": fractions,
+                "hint": "Slice i spielt auf Taste slice_root+i – z.B. `notes steps` mit --key",
+            }))
+        }
         ChannelCmd::Kick { project, channel, tune, off } => {
             let mut p = load(&project)?;
             let i = channel_idx(&p, &channel)?;

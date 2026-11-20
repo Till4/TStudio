@@ -9,9 +9,19 @@ use tstudio_dsp::stretch::StretchMode;
 use tstudio_dsp::synth::SynthParams;
 
 pub mod automation;
+pub mod change;
 pub mod history;
+pub mod meter;
+pub mod midi;
+pub mod templates;
+pub mod tempo;
+pub mod steps;
+pub mod takes;
 pub mod tracks;
 pub use automation::{AutoPoint, AutoTarget, AutomationClip};
+pub use change::{describe_change, Change};
+pub use meter::{BarMap, MeterChange};
+pub use tempo::{TempoMap, TempoPoint};
 pub use history::History;
 
 /// Ticks per quarter note.
@@ -39,6 +49,10 @@ pub struct Project {
     /// index 0 = master
     pub mixer: Vec<MixerTrack>,
     pub next_id: Id,
+    /// tempo changes after tick 0 (`bpm` is the start tempo), sorted by tick
+    pub tempo: Vec<TempoPoint>,
+    /// time-signature changes at bars (`beats_per_bar` is the meter of bar 1), sorted by bar
+    pub meters: Vec<MeterChange>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -253,11 +267,13 @@ pub struct PlaylistTrack {
     pub solo: bool,
     /// linear gain for everything on this track (audio clips and pattern notes)
     pub volume: f32,
+    /// Recording lanes: tracks with the same id are the takes of one take group (see `takes.rs`).
+    pub take_group: Option<Id>,
 }
 
 impl Default for PlaylistTrack {
     fn default() -> Self {
-        Self { name: String::new(), muted: false, solo: false, volume: 1.0 }
+        Self { name: String::new(), muted: false, solo: false, volume: 1.0, take_group: None }
     }
 }
 
@@ -389,6 +405,8 @@ impl Default for Project {
             playlist: Playlist::default(),
             mixer,
             next_id: 1,
+            tempo: Vec::new(),
+            meters: Vec::new(),
         }
     }
 }
@@ -595,12 +613,15 @@ impl Project {
         if self.bpm <= 0.0 {
             self.bpm = 120.0;
         }
+        self.sort_tempo();
+        self.sort_meters();
         let max_id = self
             .channels
             .iter()
             .map(|c| c.id)
             .chain(self.patterns.iter().map(|p| p.id))
             .chain(self.playlist.clips.iter().map(|c| c.id))
+            .chain(self.playlist.tracks.iter().filter_map(|t| t.take_group))
             .max()
             .unwrap_or(0);
         self.next_id = self.next_id.max(max_id + 1);
@@ -622,63 +643,4 @@ impl Project {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tstudio_dsp::fx::EffectKind;
-
-    #[test]
-    fn roundtrip_ron() {
-        let mut p = Project::new_default();
-        while p.mixer.len() < 17 {
-            p.add_mixer_track(None);
-        }
-        let ch = p.add_channel("Kick", Instrument::Sampler(SamplerInstrument { sample: Some("C:/s/kick.wav".into()), ..Default::default() }));
-        let cid = p.channels[ch].id;
-        let pat = p.patterns[0].id;
-        p.pattern_mut(pat).unwrap().notes.push(Note { channel: cid, key: 60, start: 0, len: 24, velocity: 0.8 });
-        p.add_clip(0, 0, p.ticks_per_bar(), ClipKind::Pattern { pattern: pat });
-        p.add_clip(
-            1,
-            384,
-            768,
-            ClipKind::Audio(AudioClip {
-                path: "C:/s/loop.wav".into(),
-                stretch: StretchSettings { mode: StretchMode::Stretch, source_bpm: 92.0, ..Default::default() },
-                ..Default::default()
-            }),
-        );
-        p.mixer[1].fx.push(FxSlot::new(EffectKind::Reverb));
-        p.mixer[1].sends.push(MixerSend { target: 5, amount: 0.4 });
-        p.swing = 0.3;
-        p.add_channel("Strings", Instrument::SoundFont(SoundFontInstrument { path: "C:/sf/x.sf2".into(), program: 48, ..Default::default() }));
-        p.add_clip(
-            2,
-            0,
-            768,
-            ClipKind::Automation(AutomationClip { target: "mixer.1.fx.0.mix".into(), points: vec![AutoPoint { t: 0, v: 0.0 }, AutoPoint { t: 768, v: 1.0 }] }),
-        );
-        let s = p.to_ron().unwrap();
-        let q = Project::from_ron(&s).unwrap();
-        assert_eq!(p, q);
-    }
-
-    #[test]
-    fn pattern_length_rounds_to_bars() {
-        let mut p = Project::new_default();
-        let pat = p.patterns[0].id;
-        let cid = p.channels[0].id;
-        assert_eq!(p.pattern_length(pat), 384);
-        p.pattern_mut(pat).unwrap().notes.push(Note { channel: cid, key: 60, start: 380, len: 30, velocity: 1.0 });
-        assert_eq!(p.pattern_length(pat), 768);
-    }
-
-    #[test]
-    fn removing_channel_removes_its_notes() {
-        let mut p = Project::new_default();
-        let pat = p.patterns[0].id;
-        let cid = p.channels[0].id;
-        p.pattern_mut(pat).unwrap().notes.push(Note { channel: cid, key: 60, start: 0, len: 24, velocity: 1.0 });
-        p.remove_channel(0);
-        assert!(p.pattern(pat).unwrap().notes.is_empty());
-    }
-}
+mod tests;

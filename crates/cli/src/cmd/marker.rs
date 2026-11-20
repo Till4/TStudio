@@ -11,7 +11,7 @@ pub(crate) fn marker_cmd(c: MarkerCmd) -> R<Value> {
             if bar < 1.0 {
                 return Err("--bar beginnt bei 1".into());
             }
-            let tick = ((bar - 1.0) * p.ticks_per_bar() as f64).round() as i64;
+            let tick = p.bar_number_to_tick(bar);
             p.playlist.markers.retain(|m| !m.name.eq_ignore_ascii_case(name.trim()));
             p.playlist.markers.push(tstudio_project::Marker { tick, name: name.trim().to_string() });
             p.playlist.sort_markers();

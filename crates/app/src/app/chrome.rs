@@ -7,6 +7,7 @@ impl TStudio {
         if ctx.wants_keyboard_input() {
             return;
         }
+        let f11 = ctx.input(|i| i.key_pressed(Key::F11));
         let (space, z, y, s, o, n, l, f5, f6, f7, f8, f9, f10, ctrl, shift, r) = ctx.input(|i| {
             (
                 i.key_pressed(Key::Space),
@@ -59,7 +60,7 @@ impl TStudio {
         } else if r && ctrl {
             self.recording = !self.recording;
         }
-        for (pressed, v) in [(f5, View::Playlist), (f6, View::Rack), (f7, View::PianoRoll), (f8, View::Instrument), (f9, View::Mixer), (f10, View::Fetch)] {
+        for (pressed, v) in [(f5, View::Playlist), (f6, View::Rack), (f7, View::PianoRoll), (f8, View::Instrument), (f9, View::Mixer), (f10, View::Fetch), (f11, View::DrumPad)] {
             if pressed {
                 self.view = v;
             }
@@ -133,6 +134,7 @@ impl TStudio {
                         }
                     }
                 }
+                MidiMsg::Cc(ch, cc, v) => ui::midi_learn::on_cc(self, ch, cc, v),
             }
         }
     }
@@ -195,11 +197,18 @@ impl TStudio {
             }
             ui.separator();
             let pos = self.position();
-            let bar = self.project.ticks_per_bar() as f64;
-            let b = (pos / bar).floor() as i64 + 1;
-            let beat = ((pos % bar) / PPQ as f64).floor() as i64 + 1;
-            let step = ((pos % PPQ as f64) / (PPQ as f64 / 4.0)).floor() as i64 + 1;
+            // song: bar/beat follow time-signature changes; patterns use the project meter
+            let bars = if self.song_mode { self.project.bar_map() } else { tstudio_project::BarMap::new(self.project.beats_per_bar, &[]) };
+            let b = bars.tick_to_bar(pos).floor() as i64 + 1;
+            let (bar_start, _) = bars.bar_bounds(pos as i64);
+            let beat_t = bars.meter_at(pos).beat_ticks as f64;
+            let in_bar = pos - bar_start as f64;
+            let beat = (in_bar / beat_t).floor() as i64 + 1;
+            let step = ((in_bar % beat_t) / (PPQ as f64 / 4.0)).floor() as i64 + 1;
             ui.label(RichText::new(format!("{b:>3}:{beat}:{step}")).monospace().size(15.0).color(ACCENT));
+            if self.song_mode && !self.project.tempo.is_empty() {
+                ui.label(RichText::new(format!("♩ {:.1}", self.project.bpm_at(pos as i64))).monospace().color(TEXT_DIM)).on_hover_text("aktuelles Tempo (Tempo-Spur)");
+            }
             ui.separator();
             ui::rack::pattern_selector(self, ui);
             ui.separator();
@@ -234,6 +243,7 @@ impl TStudio {
                     ui.close_menu();
                     self.new_project();
                 }
+                ui.menu_button("Neu aus Vorlage", |ui| self.template_menu(ui));
                 if ui.button("Öffnen…  (Strg+O)").clicked() {
                     ui.close_menu();
                     self.open_dialog();
@@ -260,23 +270,20 @@ impl TStudio {
                     ui.close_menu();
                     self.save_as();
                 }
+                if ui.button("Als Vorlage speichern…").clicked() {
+                    ui.close_menu();
+                    self.ask_template_name();
+                }
                 ui.separator();
                 if ui.button("Exportieren (WAV/MP3)…").clicked() {
                     ui.close_menu();
                     self.export.open = true;
                 }
-                if ui.button("Autosave wiederherstellen").clicked() {
+                ui.menu_button("MIDI", |ui| self.midi_menu(ui));
+                ui.separator();
+                if ui.button("Backups wiederherstellen…").clicked() {
                     ui.close_menu();
-                    let p = self.paths.autosave();
-                    if p.exists() && self.confirm_discard() {
-                        match Project::load(&p) {
-                            Ok(proj) => {
-                                self.load_project(proj, None);
-                                self.set_status("Autosave wiederhergestellt");
-                            }
-                            Err(e) => self.set_error(e),
-                        }
-                    }
+                    self.backups.show_window = true;
                 }
                 ui.separator();
                 if ui.button("Einstellungen…").clicked() {
@@ -297,6 +304,10 @@ impl TStudio {
             ui.menu_button("Ansicht", |ui| {
                 ui.checkbox(&mut self.show_library, "Sample-Library");
                 ui.checkbox(&mut self.settings.follow_playhead, "Playhead folgen");
+                if ui.button("🎛 MIDI-Learn…").clicked() {
+                    ui.close_menu();
+                    self.midi_learn.open = true;
+                }
             });
             ui.menu_button("Hinzufügen", |ui| {
                 if ui.button("TSynth-Kanal").clicked() {
@@ -328,6 +339,7 @@ impl TStudio {
                     ("L", "Pattern ↔ Song"),
                     ("F5 / F6 / F7", "Playlist / Channel Rack / Piano Roll"),
                     ("F8 / F9 / F10", "Instrument / Mixer / Sample-Cutter"),
+                    ("F11", "Drum Pads (Pads + Step-Sequencer, Slicer)"),
                     ("Strg+Z / Strg+Y", "Rückgängig / Wiederholen"),
                     ("Piano Roll: Strg+Ziehen", "Auswahlrechteck"),
                     ("Piano Roll: Entf, Strg+A/C/V/D, ↑↓, Q", "Löschen, Auswahl, Kopieren, Einfügen, Duplizieren, Transponieren, Quantisieren"),

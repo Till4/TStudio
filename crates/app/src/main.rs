@@ -1,10 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod backup;
 mod compile;
 mod live;
 mod logo;
 mod midi;
+mod midi_map;
 mod samples;
 mod settings;
 mod ui;

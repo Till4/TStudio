@@ -51,6 +51,7 @@ impl RtProcessor {
 
     fn fill<T: cpal::SizedSample + cpal::FromSample<f32>>(&mut self, data: &mut [T], channels: usize, latency: Duration) {
         let started = Instant::now();
+        let block_at = self.shared.epoch.elapsed();
         let was_playing = self.core.is_playing();
         self.drain();
         let now_playing = self.core.is_playing();
@@ -61,6 +62,11 @@ impl RtProcessor {
         while done < frames {
             let n = (frames - done).min(self.l.len());
             self.core.process(&mut self.l[..n], &mut self.r[..n]);
+            if let Some((f, pos)) = self.core.take_started_at() {
+                // count-in finished inside this block: stamp when that frame is heard
+                let offset = Duration::from_secs_f64((done + f) as f64 / self.core.sample_rate().max(1.0) as f64);
+                self.shared.note_start_at(block_at + latency + offset, pos);
+            }
             for i in 0..n {
                 let base = (done + i) * channels;
                 data[base] = T::from_sample(self.l[i]);

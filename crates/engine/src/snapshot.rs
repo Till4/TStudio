@@ -6,14 +6,19 @@ use tstudio_dsp::sampler::{Sampler, SamplerParams};
 use tstudio_dsp::synth::{Synth, SynthParams};
 use tstudio_dsp::SampleData;
 use tstudio_project::automation::value_at;
-use tstudio_project::AutoTarget;
+use tstudio_project::{AutoTarget, BarMap, TempoMap};
 
 use crate::soundfont::{SfProc, Sf2};
 
 /// Immutable, engine-ready view of the project. Indices replace ids.
 pub struct Snapshot {
+    /// start tempo (pattern mode always plays at this tempo)
     pub bpm: f64,
+    /// song tempo curve (tempo track); constant `bpm` when the project has no tempo points
+    pub tempo: TempoMap,
     pub beats_per_bar: u32,
+    /// song bar grid (time-signature changes); metronome accents follow it
+    pub bars: BarMap,
     pub channels: Vec<ChannelSnap>,
     pub patterns: Vec<PatternSnap>,
     pub clips: Vec<ClipSnap>,
@@ -98,6 +103,11 @@ pub enum ClipSnap {
         mixer_track: usize,
         fade_in: i64,
         fade_out: i64,
+        /// tempo the sample was fitted to (tempo at the clip start)
+        fit_bpm: f64,
+        /// follows the project tempo: on tempo changes inside the clip the read position
+        /// tracks the song position (varispeed); otherwise the sample plays in real time
+        follow: bool,
     },
 }
 
@@ -130,7 +140,9 @@ impl Snapshot {
     pub fn empty() -> Snapshot {
         Snapshot {
             bpm: 120.0,
+            tempo: TempoMap::constant(120.0),
             beats_per_bar: 4,
+            bars: BarMap::new(4, &[]),
             channels: Vec::new(),
             patterns: Vec::new(),
             clips: Vec::new(),

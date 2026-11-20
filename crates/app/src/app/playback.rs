@@ -38,7 +38,7 @@ impl TStudio {
             self.send(Command::Stop);
         } else {
             match self.view {
-                View::Rack | View::PianoRoll | View::Instrument => self.song_mode = false,
+                View::Rack | View::PianoRoll | View::Instrument | View::DrumPad => self.song_mode = false,
                 View::Playlist => self.song_mode = true,
                 _ => {}
             }
@@ -124,9 +124,11 @@ impl TStudio {
             self.sent_mode = Some(m);
             self.send(Command::SetMode(m));
         }
-        if self.sent_metronome != Some(self.metronome) {
-            self.sent_metronome = Some(self.metronome);
-            self.send(Command::SetMetronome(self.metronome));
+        // recording can switch the click on for the duration of a take
+        let click = self.metronome || (self.rec.active && self.settings.record_click);
+        if self.sent_metronome != Some(click) {
+            self.sent_metronome = Some(click);
+            self.send(Command::SetMetronome(click));
         }
     }
 

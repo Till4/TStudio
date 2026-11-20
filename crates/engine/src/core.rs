@@ -1,20 +1,28 @@
 //! The engine core: sequencing, voice rendering and mixing. Real-time safe
 //! (no allocation, no locks) once constructed.
 
+use crate::spectrum::{SpectrumShared, SpectrumTaps};
 use crate::snapshot::{ChannelProc, ClipSnap, FxSnap, InstrumentSnap, Rack, Snapshot, TrackProc};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use tstudio_dsp::fx::{Effect, FxContext};
 use tstudio_dsp::{pan_gains, SampleData};
+use tstudio_project::tempo::samples_per_tick;
 use tstudio_project::{AutoTarget, PPQ};
 
+mod count_in;
 mod shared;
 mod sequencer;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tempo_tests;
+#[cfg(test)]
+mod count_in_tests;
 
 pub use shared::*;
 pub use sequencer::*;
+use count_in::CountIn;
 
 /// Automation lanes evaluated per chunk (further lanes are ignored).
 pub const MAX_AUTO: usize = 64;
@@ -74,6 +82,10 @@ pub struct EngineCore {
     shared: Arc<SharedState>,
     monitor: Option<Box<MonitorIn>>,
     monitor_track: Option<usize>,
+    spectra: SpectrumTaps,
+    count_in: Option<CountIn>,
+    /// (frame offset in the last `process` call, position) where a count-in handed over to playback
+    started_at: Option<(usize, f64)>,
 }
 
 impl EngineCore {
@@ -98,7 +110,34 @@ impl EngineCore {
             shared,
             monitor: None,
             monitor_track: None,
+            spectra: SpectrumTaps::new(sr),
+            count_in: None,
+            started_at: None,
         }
+    }
+
+    /// Where the transport started during the last `process` call after a count-in:
+    /// (frame offset in that call, start position in ticks). Cleared by reading.
+    pub fn take_started_at(&mut self) -> Option<(usize, f64)> {
+        self.started_at.take()
+    }
+
+    pub fn is_counting_in(&self) -> bool {
+        self.count_in.is_some()
+    }
+
+    /// Count-in of `bars` bars in the meter and tempo at the current position (song mode follows
+    /// the time-signature and tempo tracks; pattern mode uses the project meter and start tempo).
+    fn count_in_for(&self, bars: u32) -> CountIn {
+        let (beats, beat_ticks, bpm) = match self.mode {
+            PlayMode::Song => {
+                let m = self.snap.bars.meter_at(self.pos);
+                (m.beats, m.beat_ticks, self.snap.tempo.bpm_at(self.pos))
+            }
+            PlayMode::Pattern(_) => (self.snap.beats_per_bar.max(1), PPQ, self.snap.bpm),
+        };
+        let beat_frames = beat_ticks as f64 * samples_per_tick(self.sr as f64, bpm.max(1.0));
+        CountIn::new(bars * beats.max(1), beat_frames, beats)
     }
 
     pub fn sample_rate(&self) -> f32 {
@@ -139,13 +178,24 @@ impl EngineCore {
                 gc(Garbage::Snapshot(old));
             }
             Command::Play => {
+                self.count_in = None;
                 self.playing = true;
             }
+            Command::PlayCountIn(bars) => {
+                if bars == 0 {
+                    self.count_in = None;
+                    self.playing = true;
+                } else if !self.playing {
+                    self.count_in = Some(self.count_in_for(bars));
+                }
+            }
             Command::Pause => {
+                self.count_in = None;
                 self.playing = false;
                 self.release_all();
             }
             Command::Stop => {
+                self.count_in = None;
                 self.playing = false;
                 self.pos = self.start_position();
                 self.release_all();
@@ -207,12 +257,22 @@ impl EngineCore {
         let total = out_l.len().min(out_r.len());
         let mut off = 0;
         while off < total {
-            let n = (total - off).min(MAX_CHUNK);
+            let mut n = (total - off).min(MAX_CHUNK);
+            // a count-in ends on a chunk boundary, so the song starts sample-accurately
+            if let Some(ci) = &self.count_in {
+                n = n.min(ci.remaining().max(1));
+            }
             self.process_chunk(&mut out_l[off..off + n], &mut out_r[off..off + n]);
             off += n;
+            if self.count_in.as_ref().map(|c| c.remaining() == 0).unwrap_or(false) {
+                self.count_in = None;
+                self.playing = true;
+                self.started_at = Some((off, self.pos));
+            }
         }
         self.shared.position.store(self.pos.to_bits(), Ordering::Relaxed);
         self.shared.playing.store(self.playing, Ordering::Relaxed);
+        self.shared.counting_in.store(self.count_in.is_some(), Ordering::Relaxed);
     }
 
     fn process_chunk(&mut self, out_l: &mut [f32], out_r: &mut [f32]) {
@@ -221,6 +281,7 @@ impl EngineCore {
         let snap: &Snapshot = &snap;
         let sr = self.sr;
 
+        self.spectra.sync(&self.shared.spectrum);
         for t in self.rack.tracks.iter_mut() {
             t.l[..n].fill(0.0);
             t.r[..n].fill(0.0);
@@ -261,8 +322,16 @@ impl EngineCore {
                     c.release_all();
                 }
             }
+        } else if let Some(ci) = self.count_in.as_mut() {
+            let events = &mut self.events;
+            ci.advance(n, |f, down| push_event(events, Event { frame: f, channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) }));
         }
         self.events.sort_unstable_by_key(|e| e.frame);
+        // current tempo (tempo track in song mode) for synced LFOs / delays
+        let bpm = match self.mode {
+            PlayMode::Song => snap.tempo.bpm_at(self.pos) as f32,
+            PlayMode::Pattern(_) => snap.bpm as f32,
+        };
 
         // ---- instruments, split at event frames for sample accuracy
         let mut cur = 0usize;
@@ -270,7 +339,7 @@ impl EngineCore {
             let ev = self.events[i];
             let f = ev.frame.min(n);
             if f > cur {
-                render_channels(snap, &mut self.rack, &auto, cur, f);
+                render_channels(snap, &mut self.rack, &auto, bpm, cur, f);
                 cur = f;
             }
             match ev.kind {
@@ -278,7 +347,7 @@ impl EngineCore {
                 EvKind::On | EvKind::Off => apply_event(snap, &mut self.rack, &ev),
             }
         }
-        render_channels(snap, &mut self.rack, &auto, cur, n);
+        render_channels(snap, &mut self.rack, &auto, bpm, cur, n);
 
         // ---- live input (monitoring through a mixer insert)
         if let Some(m) = &mut self.monitor {
@@ -315,7 +384,6 @@ impl EngineCore {
         }
 
         // ---- sidechain keys: pre-fx level of the source track
-        let bpm = snap.bpm as f32;
         let any_solo = snap.mixer.iter().skip(1).any(|t| t.solo);
         let Rack { tracks, keys, .. } = &mut *self.rack;
         let n_tracks = tracks.len().min(snap.mixer.len());
@@ -361,6 +429,7 @@ impl EngineCore {
                 pr = pr.max(r[k].abs());
             }
             self.shared.set_meter(t, pl, pr);
+            self.spectra.feed(&self.shared.spectrum, t, l, r);
             let dest: &mut TrackProc = if ts.output > t && ts.output < n_tracks { &mut hi[ts.output - t - 1] } else { &mut master[0] };
             for k in 0..n {
                 dest.l[k] += l[k];
@@ -438,5 +507,6 @@ impl EngineCore {
             pr = pr.max(out_r[k].abs());
         }
         self.shared.set_meter(0, pl, pr);
+        self.spectra.feed(&self.shared.spectrum, 0, out_l, out_r);
     }
 }

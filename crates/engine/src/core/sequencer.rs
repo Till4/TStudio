@@ -55,7 +55,8 @@ pub(super) fn apply_event(snap: &Snapshot, rack: &mut Rack, ev: &Event) {
     }
 }
 
-pub(super) fn render_channels(snap: &Snapshot, rack: &mut Rack, auto: &AutoVals, from: usize, to: usize) {
+/// `bpm` = current song tempo (tempo-synced synth LFOs).
+pub(super) fn render_channels(snap: &Snapshot, rack: &mut Rack, auto: &AutoVals, bpm: f32, from: usize, to: usize) {
     if to <= from {
         return;
     }
@@ -72,7 +73,7 @@ pub(super) fn render_channels(snap: &Snapshot, rack: &mut Rack, auto: &AutoVals,
         match (proc, &cs.instrument) {
             (ChannelProc::Sampler(s), InstrumentSnap::Sampler { params, .. }) => s.render(params, sl, sr),
             (ChannelProc::Synth(s), InstrumentSnap::Synth(p)) => {
-                s.bpm = snap.bpm as f32;
+                s.bpm = bpm;
                 let automated = snap.autos.iter().take(MAX_AUTO).enumerate().any(|(i, l)| auto[i].is_some() && matches!(l.target, AutoTarget::Synth { channel, .. } if channel == ci));
                 if automated {
                     let mut q = p.clone();
@@ -127,7 +128,11 @@ pub(super) fn sequence(
     metronome: bool,
     stop_at_end: bool,
 ) -> (f64, bool) {
-    let spt = sr as f64 * 60.0 / (snap.bpm.max(1.0) * PPQ as f64);
+    let srf = sr as f64;
+    // the tempo track only applies to the song; patterns loop at the start tempo
+    let song = mode == PlayMode::Song;
+    let tempo = &snap.tempo;
+    let const_bpm = |a: f64, b: f64| if song { tempo.constant_between(a, b) } else { Some(snap.bpm) };
     let bar = PPQ * snap.beats_per_bar.max(1) as i64;
     let (lo, hi, looping) = match mode {
         PlayMode::Pattern(i) => (0, snap.patterns.get(i).map(|p| p.length).unwrap_or(bar), !stop_at_end),
@@ -153,7 +158,21 @@ pub(super) fn sequence(
     let mut guard = 0;
     while frame0 < total - 1e-6 && guard < 64 {
         guard += 1;
-        let seg_ticks = ((total - frame0) / spt).min(hi - cur);
+        // one piece of constant tempo (exact), or a ramp linearised over at most one chunk
+        let next_change = if song { tempo.next_change_after(cur) } else { f64::INFINITY };
+        let (seg_ticks, spt) = match const_bpm(cur, cur) {
+            Some(bpm) => {
+                let spt = samples_per_tick(srf, bpm);
+                (((total - frame0) / spt).min(hi - cur).min(next_change - cur), spt)
+            }
+            None => {
+                let s0 = tempo.secs_at(cur);
+                let end = tempo.tick_at(s0 + (total - frame0) / srf).min(hi).min(next_change);
+                let ticks = end - cur;
+                let spt = if ticks > 1e-9 { (tempo.secs_at(end) - s0) * srf / ticks } else { samples_per_tick(srf, tempo.bpm_at(cur)) };
+                (ticks, spt)
+            }
+        };
         if seg_ticks <= 1e-9 {
             if looping {
                 cur = lo;
@@ -185,6 +204,11 @@ pub(super) fn sequence(
                     continue;
                 }
                 let t = (base + note.start) as f64;
+                let len = note.len as f64;
+                let dur = match const_bpm(t, t + len) {
+                    Some(bpm) => len * samples_per_tick(srf, bpm),
+                    None => (tempo.secs_at(t + len) - tempo.secs_at(t)) * srf,
+                };
                 push_event(
                     events,
                     Event {
@@ -193,7 +217,7 @@ pub(super) fn sequence(
                         key: note.key,
                         vel: note.velocity,
                         gain,
-                        dur: Some((note.len as f64 * spt).max(1.0) as u64),
+                        dur: Some(dur.max(1.0) as u64),
                         kind: EvKind::On,
                     },
                 );
@@ -230,19 +254,33 @@ pub(super) fn sequence(
         }
 
         // metronome
+        // metronome: one click per beat of the current meter (7/8 = eighths), accent on the bar's one;
+        // time-signature changes only apply to the song, patterns use the project meter
         if metronome {
-            let mut k = (a / PPQ as f64).ceil() as i64;
-            while ((k * PPQ) as f64) < b {
-                let down = k % snap.beats_per_bar.max(1) as i64 == 0;
-                push_event(events, Event { frame: to_frame((k * PPQ) as f64), channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) });
-                k += 1;
+            if song && !snap.bars.is_constant() {
+                let mut t = a;
+                loop {
+                    let (tick, down) = snap.bars.beat_at_or_after(t);
+                    if tick as f64 >= b {
+                        break;
+                    }
+                    push_event(events, Event { frame: to_frame(tick as f64), channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) });
+                    t = tick as f64 + 1.0;
+                }
+            } else {
+                let mut k = (a / PPQ as f64).ceil() as i64;
+                while ((k * PPQ) as f64) < b {
+                    let down = k % snap.beats_per_bar.max(1) as i64 == 0;
+                    push_event(events, Event { frame: to_frame((k * PPQ) as f64), channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) });
+                    k += 1;
+                }
             }
         }
 
         // audio clips
         if mode == PlayMode::Song {
             for clip in &snap.clips {
-                if let ClipSnap::Audio { sample, start, len, offset, gain, mixer_track, fade_in, fade_out } = clip {
+                if let ClipSnap::Audio { sample, start, len, offset, gain, mixer_track, fade_in, fade_out, fit_bpm, follow } = clip {
                     // latency compensation (e.g. Autotune): start the clip that much earlier
                     let adv = chain_latency(snap, *mixer_track, sr) as f64 / spt;
                     let cs = *start as f64 - adv;
@@ -255,10 +293,16 @@ pub(super) fn sequence(
                     let Some(track) = tracks.get_mut(*mixer_track) else { continue };
                     let fs = (frame0 + (wl - a) * spt).round().max(0.0) as usize;
                     let fe = ((frame0 + (wh - a) * spt).round() as usize).min(n);
+                    let spt_fit = samples_per_tick(srf, *fit_bpm);
+                    // tempo-following clips read by song position (at the tempo they were fitted to),
+                    // the others play in real time from the clip start
+                    let by_ticks = *follow || tempo.is_constant();
+                    let secs_a = if by_ticks { 0.0 } else { tempo.secs_at(a) - tempo.secs_at(cs) };
                     for f in fs..fe {
                         let t = a + (f as f64 - frame0) / spt;
                         let local = t - cs;
-                        let idx = ((local + *offset as f64) * spt).max(0.0) as usize;
+                        let pos = if by_ticks { (local + *offset as f64) * spt_fit } else { (secs_a + (f as f64 - frame0) / srf) * srf + *offset as f64 * spt_fit };
+                        let idx = pos.max(0.0) as usize;
                         if sample.is_empty() {
                             break;
                         }

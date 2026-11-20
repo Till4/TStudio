@@ -46,10 +46,11 @@ pub enum EffectKind {
     Clipper,
     Multiband,
     Ott,
+    Width,
 }
 
 impl EffectKind {
-    pub const ALL: [EffectKind; 13] = [
+    pub const ALL: [EffectKind; 14] = [
         EffectKind::Eq,
         EffectKind::Compressor,
         EffectKind::Reverb,
@@ -63,6 +64,7 @@ impl EffectKind {
         EffectKind::Clipper,
         EffectKind::Multiband,
         EffectKind::Ott,
+        EffectKind::Width,
     ];
 
     pub fn name(self) -> &'static str {
@@ -80,6 +82,7 @@ impl EffectKind {
             EffectKind::Clipper => "Clipper",
             EffectKind::Multiband => "Multiband",
             EffectKind::Ott => "OTT",
+            EffectKind::Width => "Width",
         }
     }
 
@@ -98,6 +101,7 @@ impl EffectKind {
             EffectKind::Clipper => EffectParams::Clipper(ClipperParams::default()),
             EffectKind::Multiband => EffectParams::Multiband(MultibandParams::default()),
             EffectKind::Ott => EffectParams::Ott(OttParams::default()),
+            EffectKind::Width => EffectParams::Width(WidthParams::default()),
         }
     }
 }
@@ -117,6 +121,7 @@ pub enum EffectParams {
     Clipper(ClipperParams),
     Multiband(MultibandParams),
     Ott(OttParams),
+    Width(WidthParams),
 }
 
 impl EffectParams {
@@ -135,6 +140,7 @@ impl EffectParams {
             EffectParams::Clipper(_) => EffectKind::Clipper,
             EffectParams::Multiband(_) => EffectKind::Multiband,
             EffectParams::Ott(_) => EffectKind::Ott,
+            EffectParams::Width(_) => EffectKind::Width,
         }
     }
 
@@ -154,6 +160,7 @@ impl EffectParams {
             EffectParams::Clipper(_) => ClipperParams::FIELDS,
             EffectParams::Multiband(_) => MultibandParams::FIELDS,
             EffectParams::Ott(_) => OttParams::FIELDS,
+            EffectParams::Width(_) => WidthParams::FIELDS,
         }
     }
 
@@ -172,6 +179,7 @@ impl EffectParams {
             EffectParams::Clipper(p) => p.field_mut(i),
             EffectParams::Multiband(p) => p.field_mut(i),
             EffectParams::Ott(p) => p.field_mut(i),
+            EffectParams::Width(p) => p.field_mut(i),
         }
     }
 
@@ -190,6 +198,7 @@ impl EffectParams {
             EffectParams::Clipper(p) => p.field(i),
             EffectParams::Multiband(p) => p.field(i),
             EffectParams::Ott(p) => p.field(i),
+            EffectParams::Width(p) => p.field(i),
         }
     }
 

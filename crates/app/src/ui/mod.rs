@@ -1,8 +1,10 @@
 pub mod cutter;
+pub mod drumpad;
 pub mod export;
 pub mod fetch;
 pub mod instrument;
 pub mod library;
+pub mod midi_learn;
 pub mod mixer;
 pub mod piano_roll;
 pub mod playlist;

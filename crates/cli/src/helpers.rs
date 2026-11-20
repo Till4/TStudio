@@ -5,6 +5,11 @@ use crate::*;
 pub(crate) type R<T> = Result<T, String>;
 
 /// `dj_name` from TStudio's settings.ron (empty if not set).
+/// TStudio's user template folder (same place the app uses).
+pub(crate) fn templates_dir() -> PathBuf {
+    directories::ProjectDirs::from("de", "TStudio", "TStudio").map(|d| d.config_dir().join("templates")).unwrap_or_else(|| std::env::temp_dir().join("TStudio").join("templates"))
+}
+
 pub(crate) fn settings_dj_name() -> String {
     let Some(dir) = directories::ProjectDirs::from("de", "TStudio", "TStudio") else { return String::new() };
     let Ok(s) = std::fs::read_to_string(dir.config_dir().join("settings.ron")) else { return String::new() };
@@ -125,7 +130,11 @@ pub(crate) fn pick_sf_preset(presets: &[Sf2Preset], sel: Option<&str>, program: 
 pub(crate) fn effect_kind(s: &str) -> R<EffectKind> {
     EffectKind::ALL
         .into_iter()
-        .find(|k| k.name().eq_ignore_ascii_case(s) || (s.eq_ignore_ascii_case("comp") && *k == EffectKind::Compressor))
+        .find(|k| {
+            k.name().eq_ignore_ascii_case(s)
+                || (s.eq_ignore_ascii_case("comp") && *k == EffectKind::Compressor)
+                || (*k == EffectKind::Width && ["stereo", "stereowidth", "stereo-width", "imager"].iter().any(|a| a.eq_ignore_ascii_case(s)))
+        })
         .ok_or_else(|| format!("Effekt '{s}' unbekannt (vorhanden: {})", EffectKind::ALL.iter().map(|k| k.name()).collect::<Vec<_>>().join(", ")))
 }
 
@@ -153,9 +162,12 @@ pub(crate) fn info(p: &Project) -> Value {
         "name": p.name,
         "bpm": p.bpm,
         "beats_per_bar": p.beats_per_bar,
+        "tempo_changes": p.tempo.len(),
+        "song_length_s": (p.tick_to_time(p.song_length() as f64) * 1000.0).round() / 1000.0,
         "swing": p.swing,
         "master_volume": p.mixer[0].volume,
-        "song_length_bars": p.song_length() as f64 / bar as f64,
+        "song_length_bars": p.tick_to_bar_number(p.song_length()) - 1.0,
+        "meters": p.meters.iter().map(|m| json!({"bar": m.bar + 1, "meter": m.label()})).collect::<Vec<_>>(),
         "channels": p.channels.iter().enumerate().map(|(i, c)| {
             let mut v = json!({"index": i, "name": c.name, "type": c.instrument.kind_name(), "mixer_track": c.mixer_track, "volume": c.volume, "pan": c.pan, "muted": c.muted});
             if let Instrument::Sampler(s) = &c.instrument {
@@ -190,7 +202,7 @@ pub(crate) fn info(p: &Project) -> Value {
                 ClipKind::Automation(a) => json!({"automation": a.target, "points": a.points.len(),
                     "from": a.points.first().map(|q| q.v), "to": a.points.last().map(|q| q.v)}),
             };
-            json!({"id": c.id, "track": c.track + 1, "bar": c.start as f64 / bar as f64 + 1.0, "bars": c.len as f64 / bar as f64, "muted": c.muted, "content": what})
+            json!({"id": c.id, "track": c.track + 1, "bar": p.tick_to_bar_number(c.start), "bars": p.tick_to_bar_number(c.end()) - p.tick_to_bar_number(c.start), "muted": c.muted, "content": what})
         }).collect::<Vec<_>>(),
         "mixer": p.mixer.iter().enumerate().filter(|(i, t)| *i == 0 || !t.fx.is_empty() || p.channels.iter().any(|c| c.mixer_track == *i) || (t.volume - 0.8).abs() > 1e-4 || t.muted || t.solo
                 || t.output != 0 || !t.sends.is_empty() || p.mixer.iter().any(|o| o.output == *i || o.sends.iter().any(|s| s.target == *i)))

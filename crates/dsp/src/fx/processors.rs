@@ -16,6 +16,7 @@ pub enum Effect {
     Clipper(ClipperFx),
     Multiband(MultibandFx),
     Ott(OttFx),
+    Width(WidthFx),
 }
 
 impl Effect {
@@ -34,6 +35,7 @@ impl Effect {
             EffectKind::Clipper => Effect::Clipper(ClipperFx::default()),
             EffectKind::Multiband => Effect::Multiband(MultibandFx::default()),
             EffectKind::Ott => Effect::Ott(OttFx::default()),
+            EffectKind::Width => Effect::Width(WidthFx::default()),
         }
     }
 
@@ -52,6 +54,7 @@ impl Effect {
             Effect::Clipper(_) => EffectKind::Clipper,
             Effect::Multiband(_) => EffectKind::Multiband,
             Effect::Ott(_) => EffectKind::Ott,
+            Effect::Width(_) => EffectKind::Width,
         }
     }
 
@@ -71,6 +74,7 @@ impl Effect {
             (Effect::Clipper(fx), EffectParams::Clipper(p)) => fx.process(p, ctx, l, r),
             (Effect::Multiband(fx), EffectParams::Multiband(p)) => fx.process(p, ctx, l, r),
             (Effect::Ott(fx), EffectParams::Ott(p)) => fx.process(p, ctx, l, r),
+            (Effect::Width(fx), EffectParams::Width(p)) => fx.process(p, ctx, l, r),
             _ => {}
         }
     }

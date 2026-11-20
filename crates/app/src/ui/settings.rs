@@ -44,6 +44,7 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
     let mut rescan = false;
     let mut redetect = false;
     let mut midi_change: Option<Option<String>> = None;
+    let mut open_learn = false;
     let before = app.settings.clone();
 
     egui::Window::new("Einstellungen").open(&mut open).default_width(520.0).collapsible(false).show(ctx, |ui| {
@@ -128,6 +129,12 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
         if ports.is_empty() && !scanning {
             ui.weak("Kein MIDI-Gerät gefunden.");
         }
+        ui.horizontal(|ui| {
+            if ui.button("🎛 MIDI-Learn…").on_hover_text("Regler/Fader des Controllers Mixer-Lautstärke/Pan und TSynth-Makros/Cutoff zuweisen").clicked() {
+                open_learn = true;
+            }
+            ui.weak(format!("{} Zuweisung(en)", s.midi_mappings.len()));
+        });
 
         ui.separator();
         ui.heading("Sample-Library");
@@ -281,6 +288,9 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
     });
 
     app.show_settings = open;
+    if open_learn {
+        app.midi_learn.open = true;
+    }
     if let Some(m) = midi_change {
         match &m {
             Some(name) => app.midi.connect(name, ctx.clone()),

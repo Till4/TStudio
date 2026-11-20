@@ -12,6 +12,9 @@ mod track;
 mod auto;
 mod marker;
 mod section;
+mod tempo;
+mod meter;
+mod midi;
 
 pub(crate) use channel::*;
 pub(crate) use pattern::*;
@@ -23,10 +26,13 @@ pub(crate) use track::*;
 pub(crate) use auto::*;
 pub(crate) use marker::*;
 pub(crate) use section::*;
+pub(crate) use tempo::*;
+pub(crate) use meter::*;
+pub(crate) use midi::*;
 
 pub(crate) fn run(cmd: Cmd) -> R<Value> {
     match cmd {
-        Cmd::New { project, bpm, name, empty, force } => {
+        Cmd::New { project, bpm, name, empty, template, force } => {
             if live::is_keyword(&project) {
                 return Err("`new` braucht einen Dateinamen; danach `open <datei>` lädt es in TStudio".into());
             }
@@ -36,7 +42,15 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             if project.exists() && !force {
                 return Err(format!("{} existiert schon (--force überschreibt)", project.display()));
             }
-            let mut p = if empty {
+            let mut p = if let Some(t) = &template {
+                let dir = templates_dir();
+                let found = templates::find(&dir, t).ok_or_else(|| {
+                    let mut all: Vec<String> = templates::list_user_templates(&dir).into_iter().map(|(n, _)| n).collect();
+                    all.extend(templates::builtin_names().into_iter().map(String::from));
+                    format!("Vorlage '{t}' nicht gefunden (vorhanden: {})", all.join(", "))
+                })?;
+                templates::instantiate(found)
+            } else if empty {
                 let mut p = Project::default();
                 let id = p.alloc_id();
                 p.patterns.push(tstudio_project::Pattern { id, ..Default::default() });
@@ -44,7 +58,11 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             } else {
                 Project::new_default()
             };
-            p.bpm = bpm;
+            if let Some(b) = bpm {
+                p.bpm = b;
+            } else if template.is_none() {
+                p.bpm = 140.0;
+            }
             p.name = name.unwrap_or_else(|| project.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or("Untitled".into()));
             save(&project, &mut p)?;
             Ok(json!({"ok": true, "project": abs(&project), "info": info(&p)}))
@@ -153,9 +171,8 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             let mut stem_files = Vec::new();
             if let Some(dir) = &stems {
                 std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-                for s in tools::render_stems(&p, sr)? {
-                    let clean: String = s.name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
-                    let f = dir.join(format!("{:02} {}.wav", s.track, clean.trim()));
+                for s in tools::render_stems(&p, sr, mode, tail)? {
+                    let f = dir.join(tstudio_engine::stem_file_name(s.track, &s.name, "wav"));
                     audio::save_audio(&s.data, &f, bits, kbps)?;
                     stem_files.push(json!({"track": s.track, "name": s.name, "bus": s.bus, "file": abs(&f)}));
                 }
@@ -232,7 +249,7 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             let mut warnings = master.warnings.clone();
             let mut out = json!({"ok": true, "master": master, "missing_samples": r.missing});
             if !master_only {
-                let stems = tools::render_stems(&p, sr)?;
+                let stems = tools::render_stems(&p, sr, PlayMode::Song, 1.0)?;
                 let (tracks, pairs, w) = tools::stems_report(&stems);
                 warnings.extend(w);
                 out["tracks"] = json!(tracks);
@@ -299,7 +316,10 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             Ok(json!({"ok": true, "out": abs(&output), "before": f, "after": after, "shift_semitones": (semis * 100.0).round() / 100.0, "duration_s": out.duration_secs()}))
         }
         Cmd::Marker(c) => marker_cmd(c),
+        Cmd::Midi(c) => midi_cmd(c),
         Cmd::Section(c) => section_cmd(c),
+        Cmd::Tempo(c) => tempo_cmd(c),
+        Cmd::Meter(c) => meter_cmd(c),
         Cmd::Stretch { input, output, from, to, mode, pitch, formant } => {
             let d = audio::load(&input)?;
             let m = stretch_mode(&mode)?;

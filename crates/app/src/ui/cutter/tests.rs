@@ -51,3 +51,52 @@ fn moved_selection_keeps_width_and_stays_in_file() {
     assert_eq!(moved_selection((100, 300), 900, 1000), (800, 1000));
     assert_eq!(moved_selection((100, 300), 0, 1000), (0, 200));
 }
+
+#[test]
+fn nudge_moves_by_beat_and_fine_step() {
+    // 4 beats in a 4000-sample loop: one beat = 1000 samples
+    assert_eq!(beat_step((1000, 5000), 4, 48000, 48000.0, 120.0), 1000);
+    // whole file selected: one beat of the project tempo (120 BPM @ 48 kHz = 24000)
+    assert_eq!(beat_step((0, 48000), 4, 48000, 48000.0, 120.0), 24000);
+    assert_eq!(fine_step(48000.0), 48);
+    assert_eq!(fine_step(10.0), 1);
+    assert_eq!(nudged_selection((1000, 5000), 1000, 48000), (2000, 6000));
+    assert_eq!(nudged_selection((1000, 5000), -1500, 48000), (0, 4000));
+    assert_eq!(nudged_selection((1000, 5000), 100_000, 48000), (44000, 48000));
+}
+
+#[test]
+fn markers_add_jump_and_step() {
+    let d = SampleData::new(vec![0.1; 1000], vec![0.1; 1000], 44100);
+    let mut t = trim_with(d);
+    t.sel = (100, 200);
+    assert_eq!(t.add_marker(), 0);
+    assert_eq!(t.add_marker(), 0, "same selection is not stored twice");
+    t.sel = (500, 700);
+    assert_eq!(t.add_marker(), 1);
+    assert_eq!(t.markers[0].name, "Marker 1");
+    assert_eq!(t.markers[1].name, "Marker 2");
+    t.markers.remove(0);
+    assert_eq!(next_marker_name(&t.markers), "Marker 1");
+    t.sel = (0, 1000);
+    t.add_marker();
+    t.markers.push(CutMarker { name: "Snare".into(), sel: (300, 400) });
+    // markers by start: (0,1000)=1, (300,400)=2, (500,700)=0
+    assert_eq!(marker_step(&t.markers, 300, true), Some(0));
+    assert_eq!(marker_step(&t.markers, 300, false), Some(1));
+    assert_eq!(marker_step(&t.markers, 500, true), None);
+    t.jump_marker(2);
+    assert_eq!(t.sel, (300, 400));
+    assert_eq!(marker_label("  "), "Marker");
+    // a newly loaded file starts without markers
+    t.set_loaded(PathBuf::from("other.wav"), Loaded { peaks: Peaks::of(&SampleData::new(vec![0.0; 10], vec![0.0; 10], 44100)), hits: vec![], data: SampleData::new(vec![0.0; 10], vec![0.0; 10], 44100) });
+    assert!(t.markers.is_empty());
+}
+
+#[test]
+fn save_target_names() {
+    let base = Path::new("cuts");
+    assert_eq!(save_target(base, "song", Some(0), None), (base.join("Kick"), "song Kick".to_string()));
+    assert_eq!(save_target(base, "song", Some(1), Some("Fill")), (base.join("Snare"), "song Fill Snare".to_string()));
+    assert_eq!(save_target(base, "song", None, Some("A")), (base.to_path_buf(), "song A".to_string()));
+}

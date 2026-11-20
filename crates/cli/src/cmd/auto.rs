@@ -26,9 +26,8 @@ pub(crate) fn auto_cmd(c: AutoCmd) -> R<Value> {
                 return Err("--track ist 1-basiert".into());
             }
             let t = p.parse_auto_target(&target)?;
-            let bar_t = p.ticks_per_bar();
-            let len = (bars * bar_t as f64).round().max(1.0) as i64;
-            let start = ((bar - 1.0).max(0.0) * bar_t as f64).round() as i64;
+            let start = p.bar_number_to_tick(bar.max(1.0));
+            let len = p.bars_to_ticks_from(start, bars).max(1);
             let (lo, hi, _) = field_range(Project::auto_field_name(&target));
             let base = p.auto_base_value(t);
             let mut pts = match (points, from, to) {

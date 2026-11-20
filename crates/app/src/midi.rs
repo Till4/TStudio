@@ -1,15 +1,13 @@
-//! MIDI keyboard input: notes go straight to the engine (low latency) and to the UI (recording).
+//! MIDI keyboard input: notes go straight to the engine (low latency) and to the UI (recording);
+//! control changes go only to the UI, which applies learned mappings (`midi_map`).
+//! The callback never blocks on the audio thread: the engine queue is a lock-free ring.
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tstudio_engine::Command;
 
-#[derive(Clone, Copy, Debug)]
-pub enum MidiMsg {
-    NoteOn(u8, f32),
-    NoteOff(u8),
-}
+pub use crate::midi_map::MidiMsg;
 
 pub struct Midi {
     conn: Option<midir::MidiInputConnection<()>>,
@@ -62,26 +60,19 @@ impl Midi {
             &port,
             "tstudio-in",
             move |_ts, msg, _| {
-                if msg.len() < 3 {
-                    return;
-                }
-                let status = msg[0] & 0xF0;
-                let key = msg[1].min(127);
-                let vel = msg[2];
-                let parsed = match status {
-                    0x90 if vel > 0 => Some(MidiMsg::NoteOn(key, vel as f32 / 127.0)),
-                    0x80 | 0x90 => Some(MidiMsg::NoteOff(key)),
-                    _ => None,
-                };
-                let Some(m) = parsed else { return };
+                let Some(m) = crate::midi_map::parse(msg) else { return };
                 let ch = target.load(Ordering::Relaxed);
-                if let Ok(mut guard) = engine_tx.lock() {
-                    if let Some(p) = guard.as_mut() {
-                        let cmd = match m {
-                            MidiMsg::NoteOn(k, v) => Command::NoteOn { channel: ch, key: k, velocity: v },
-                            MidiMsg::NoteOff(k) => Command::NoteOff { channel: ch, key: k },
-                        };
-                        let _ = p.push(cmd);
+                let cmd = match m {
+                    MidiMsg::NoteOn(k, v) => Some(Command::NoteOn { channel: ch, key: k, velocity: v }),
+                    MidiMsg::NoteOff(k) => Some(Command::NoteOff { channel: ch, key: k }),
+                    MidiMsg::Cc(..) => None,
+                };
+                if let Some(cmd) = cmd {
+                    // the UI holds this lock only briefly when the engine restarts
+                    if let Ok(mut guard) = engine_tx.lock() {
+                        if let Some(p) = guard.as_mut() {
+                            let _ = p.push(cmd);
+                        }
                     }
                 }
                 let _ = tx.send(m);

@@ -2,6 +2,11 @@
 
 use crate::*;
 
+mod midi;
+mod timeline;
+pub(crate) use midi::*;
+pub(crate) use timeline::*;
+
 #[derive(Parser)]
 #[command(
     name = "tstudio-cli",
@@ -26,13 +31,18 @@ pub(crate) enum Cmd {
     /// Neues Projekt anlegen (mit TSynth-Kanal und Pattern 1)
     New {
         project: PathBuf,
-        #[arg(long, default_value_t = 140.0)]
-        bpm: f64,
+        /// Tempo (Standard 140, mit --template das der Vorlage)
+        #[arg(long)]
+        bpm: Option<f64>,
         #[arg(long)]
         name: Option<String>,
         /// ohne Standard-Kanal
         #[arg(long)]
         empty: bool,
+        /// aus Vorlage: eigene (TStudio-Vorlagenordner) oder mitgelieferte, z.B. "Schranz 155"
+        /// (Tempo der Vorlage, außer --bpm ist angegeben)
+        #[arg(long, conflicts_with = "empty")]
+        template: Option<String>,
         /// vorhandene Datei überschreiben
         #[arg(long)]
         force: bool,
@@ -177,9 +187,18 @@ pub(crate) enum Cmd {
     /// Song-Marker (Intro, Break, Drop …) – überall statt Taktnummern nutzbar
     #[command(subcommand)]
     Marker(MarkerCmd),
+    /// MIDI-Dateien: Pattern/Song exportieren, .mid als Pattern importieren
+    #[command(subcommand)]
+    Midi(MidiCmd),
     /// Song-Abschnitte: Takte kopieren, leeren, einfügen, löschen (Takt oder Markername)
     #[command(subcommand)]
     Section(SectionCmd),
+    /// Tempo-Spur: Tempowechsel ab einem Takt (springend oder als Rampe)
+    #[command(subcommand)]
+    Tempo(TempoCmd),
+    /// Taktartwechsel (4/4 → 7/8 → 4/4 …); --bar bleibt überall 1-basiert und folgt den Wechseln
+    #[command(subcommand)]
+    Meter(MeterCmd),
     /// Tempo einer Datei ändern (Stretch = Tonhöhe bleibt, Resample = wie Platte)
     Stretch {
         input: PathBuf,
@@ -349,6 +368,19 @@ pub(crate) enum ChannelCmd {
         /// vorher alle Routings löschen
         #[arg(long)]
         clear: bool,
+    },
+    /// Sample eines Sampler-Kanals slicen (Chop-Modus): `--even N` gleiche Teile oder Transienten
+    /// (`--sensitivity 0..1`, Standard 0.5). Slice i liegt auf Taste `--root` + i (Standard: bisheriges slice_root)
+    Slice {
+        project: PathBuf,
+        channel: String,
+        #[arg(long, conflicts_with = "sensitivity")]
+        even: Option<usize>,
+        #[arg(long)]
+        sensitivity: Option<f32>,
+        /// erste Taste, z.B. C2 oder 36
+        #[arg(long)]
+        root: Option<String>,
     },
     /// TSynth-Kick-Engine einschalten und den Grundton stimmen (`--tune F1`, Zahl = MIDI-Note)
     Kick {
@@ -752,7 +784,8 @@ pub(crate) enum ClipCmd {
 
 #[derive(Subcommand)]
 pub(crate) enum FxCmd {
-    /// Effekt auf Mixer-Spur legen (0 = Master): eq, compressor, reverb, delay, distortion, chorus, filter, limiter, sidechain, autotune
+    /// Effekt auf Mixer-Spur legen (0 = Master): eq, compressor, reverb, delay, distortion, chorus, filter, limiter, sidechain, autotune,
+    /// clipper, multiband, ott, width (Stereobreite 0–200 %, Mitte/Seite, Bass mono unter X Hz)
     /// (sidechain: `--source N` = Spur, deren Signal duckt, z.B. die Kick)
     Add {
         project: PathBuf,
@@ -770,7 +803,7 @@ pub(crate) enum FxCmd {
         track: usize,
         slot: usize,
     },
-    /// Fertige Effektkette auf eine Spur: schranz-kick, rumble, master, ott, vocal, bass
+    /// Fertige Effektkette auf eine Spur: schranz-kick, rumble, master, ott, vocal, bass, wide, mono-bass
     Chain {
         project: PathBuf,
         #[arg(long)]
