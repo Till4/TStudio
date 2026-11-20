@@ -357,6 +357,7 @@ impl eframe::App for TStudio {
         ui::export::poll(self);
         ui::record::poll(self, ctx);
         self.update_meters();
+        ui::mixer::sync_spectrum(self);
 
         egui::TopBottomPanel::top("menu").show(ctx, |ui| self.menu_bar(ui));
         egui::TopBottomPanel::top("transport").frame(egui::Frame::default().fill(widgets::BG_DARK).inner_margin(egui::Margin::symmetric(8.0, 5.0))).show(ctx, |ui| self.transport_bar(ui));
@@ -391,7 +392,7 @@ impl eframe::App for TStudio {
         let keep = self.project.referenced_samples();
         self.cache.gc(&keep);
         if !ctx.input(|i| i.pointer.any_down()) && !ctx.wants_keyboard_input() {
-            self.history.commit(&self.project);
+            self.commit_history();
         }
         self.auto_backup();
         self.check_external_change(ctx);

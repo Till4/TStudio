@@ -130,7 +130,11 @@ pub(crate) fn pick_sf_preset(presets: &[Sf2Preset], sel: Option<&str>, program: 
 pub(crate) fn effect_kind(s: &str) -> R<EffectKind> {
     EffectKind::ALL
         .into_iter()
-        .find(|k| k.name().eq_ignore_ascii_case(s) || (s.eq_ignore_ascii_case("comp") && *k == EffectKind::Compressor))
+        .find(|k| {
+            k.name().eq_ignore_ascii_case(s)
+                || (s.eq_ignore_ascii_case("comp") && *k == EffectKind::Compressor)
+                || (*k == EffectKind::Width && ["stereo", "stereowidth", "stereo-width", "imager"].iter().any(|a| a.eq_ignore_ascii_case(s)))
+        })
         .ok_or_else(|| format!("Effekt '{s}' unbekannt (vorhanden: {})", EffectKind::ALL.iter().map(|k| k.name()).collect::<Vec<_>>().join(", ")))
 }
 

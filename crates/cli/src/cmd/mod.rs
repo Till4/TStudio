@@ -171,9 +171,8 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             let mut stem_files = Vec::new();
             if let Some(dir) = &stems {
                 std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-                for s in tools::render_stems(&p, sr)? {
-                    let clean: String = s.name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
-                    let f = dir.join(format!("{:02} {}.wav", s.track, clean.trim()));
+                for s in tools::render_stems(&p, sr, mode, tail)? {
+                    let f = dir.join(tstudio_engine::stem_file_name(s.track, &s.name, "wav"));
                     audio::save_audio(&s.data, &f, bits, kbps)?;
                     stem_files.push(json!({"track": s.track, "name": s.name, "bus": s.bus, "file": abs(&f)}));
                 }
@@ -250,7 +249,7 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
             let mut warnings = master.warnings.clone();
             let mut out = json!({"ok": true, "master": master, "missing_samples": r.missing});
             if !master_only {
-                let stems = tools::render_stems(&p, sr)?;
+                let stems = tools::render_stems(&p, sr, PlayMode::Song, 1.0)?;
                 let (tracks, pairs, w) = tools::stems_report(&stems);
                 warnings.extend(w);
                 out["tracks"] = json!(tracks);

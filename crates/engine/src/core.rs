@@ -1,6 +1,7 @@
 //! The engine core: sequencing, voice rendering and mixing. Real-time safe
 //! (no allocation, no locks) once constructed.
 
+use crate::spectrum::{SpectrumShared, SpectrumTaps};
 use crate::snapshot::{ChannelProc, ClipSnap, FxSnap, InstrumentSnap, Rack, Snapshot, TrackProc};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -77,6 +78,7 @@ pub struct EngineCore {
     shared: Arc<SharedState>,
     monitor: Option<Box<MonitorIn>>,
     monitor_track: Option<usize>,
+    spectra: SpectrumTaps,
 }
 
 impl EngineCore {
@@ -101,6 +103,7 @@ impl EngineCore {
             shared,
             monitor: None,
             monitor_track: None,
+            spectra: SpectrumTaps::new(sr),
         }
     }
 
@@ -224,6 +227,7 @@ impl EngineCore {
         let snap: &Snapshot = &snap;
         let sr = self.sr;
 
+        self.spectra.sync(&self.shared.spectrum);
         for t in self.rack.tracks.iter_mut() {
             t.l[..n].fill(0.0);
             t.r[..n].fill(0.0);
@@ -368,6 +372,7 @@ impl EngineCore {
                 pr = pr.max(r[k].abs());
             }
             self.shared.set_meter(t, pl, pr);
+            self.spectra.feed(&self.shared.spectrum, t, l, r);
             let dest: &mut TrackProc = if ts.output > t && ts.output < n_tracks { &mut hi[ts.output - t - 1] } else { &mut master[0] };
             for k in 0..n {
                 dest.l[k] += l[k];
@@ -445,5 +450,6 @@ impl EngineCore {
             pr = pr.max(out_r[k].abs());
         }
         self.shared.set_meter(0, pl, pr);
+        self.spectra.feed(&self.shared.spectrum, 0, out_l, out_r);
     }
 }

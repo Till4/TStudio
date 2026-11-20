@@ -189,17 +189,29 @@ impl TStudio {
         }
     }
 
+    /// Records pending edits as an undo step; mixer edits get a label, and continuous mixer
+    /// controls (fader, pan, send, effect knob, name) nudged repeatedly merge into one step.
+    pub fn commit_history(&mut self) {
+        match tstudio_project::describe_change(self.history.committed(), &self.project) {
+            Some(ch) => self.history.commit_with(&self.project, &ch.label, ch.key.as_deref(), Instant::now()),
+            None => self.history.commit(&self.project),
+        };
+    }
+
     pub fn undo(&mut self) {
+        self.commit_history();
+        let label = self.history.undo_label().unwrap_or_default().to_string();
         if self.history.undo(&mut self.project) {
             self.piano.clear_selection();
-            self.set_status("Rückgängig");
+            self.set_status(if label.is_empty() { "Rückgängig".to_string() } else { format!("Rückgängig: {label}") });
         }
     }
 
     pub fn redo(&mut self) {
+        let label = self.history.redo_label().unwrap_or_default().to_string();
         if self.history.redo(&mut self.project) {
             self.piano.clear_selection();
-            self.set_status("Wiederhergestellt");
+            self.set_status(if label.is_empty() { "Wiederhergestellt".to_string() } else { format!("Wiederhergestellt: {label}") });
         }
     }
 

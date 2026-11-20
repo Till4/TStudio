@@ -100,6 +100,8 @@ pub struct SharedState {
     pub(super) play_start: Stamp,
     /// output latency of the device in ns
     pub(super) out_latency_ns: AtomicU64,
+    /// per-track FFT spectra for the mixer (only watched tracks are analysed)
+    pub spectrum: SpectrumShared,
 }
 
 impl SharedState {
@@ -114,6 +116,7 @@ impl SharedState {
             epoch: std::time::Instant::now(),
             play_start: Stamp::new(),
             out_latency_ns: AtomicU64::new(0),
+            spectrum: SpectrumShared::default(),
         }
     }
 

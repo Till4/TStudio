@@ -14,6 +14,8 @@ pub mod input;
 pub mod render;
 pub mod snapshot;
 pub mod soundfont;
+pub mod spectrum;
+pub mod stems;
 
 pub use audio::{list_output_devices, AudioConfig, EngineHandle};
 pub use input::{list_input_devices, InputHandle, Take};
@@ -21,5 +23,7 @@ pub use core::{Command, EngineCore, Garbage, MonitorIn, PlayMode, SharedState, M
 pub use soundfont::{load_soundfont, soundfont_presets, Sf2Preset};
 pub use compile::{compile_project, SampleSource};
 pub use render::render_offline;
+pub use spectrum::{SpectrumFrame, SpectrumShared, SPECTRUM_SLOTS};
+pub use stems::{compile_stems, render_stems, stem_file_name, stem_jobs, Stem, StemJob};
 pub use snapshot::{AutoClipSnap, AutoLane, ChannelSnap, ClipSnap, FxSnap, InstrumentSnap, NoteSnap, PatternSnap, Rack, Snapshot, TrackSnap};
 pub use tstudio_project::PPQ;

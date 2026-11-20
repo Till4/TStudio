@@ -9,6 +9,7 @@ use tstudio_dsp::stretch::StretchMode;
 use tstudio_dsp::synth::SynthParams;
 
 pub mod automation;
+pub mod change;
 pub mod history;
 pub mod meter;
 pub mod midi;
@@ -16,6 +17,7 @@ pub mod templates;
 pub mod tempo;
 pub mod tracks;
 pub use automation::{AutoPoint, AutoTarget, AutomationClip};
+pub use change::{describe_change, Change};
 pub use meter::{BarMap, MeterChange};
 pub use tempo::{TempoMap, TempoPoint};
 pub use history::History;

@@ -771,7 +771,8 @@ pub(crate) enum ClipCmd {
 
 #[derive(Subcommand)]
 pub(crate) enum FxCmd {
-    /// Effekt auf Mixer-Spur legen (0 = Master): eq, compressor, reverb, delay, distortion, chorus, filter, limiter, sidechain, autotune
+    /// Effekt auf Mixer-Spur legen (0 = Master): eq, compressor, reverb, delay, distortion, chorus, filter, limiter, sidechain, autotune,
+    /// clipper, multiband, ott, width (Stereobreite 0–200 %, Mitte/Seite, Bass mono unter X Hz)
     /// (sidechain: `--source N` = Spur, deren Signal duckt, z.B. die Kick)
     Add {
         project: PathBuf,
@@ -789,7 +790,7 @@ pub(crate) enum FxCmd {
         track: usize,
         slot: usize,
     },
-    /// Fertige Effektkette auf eine Spur: schranz-kick, rumble, master, ott, vocal, bass
+    /// Fertige Effektkette auf eine Spur: schranz-kick, rumble, master, ott, vocal, bass, wide, mono-bass
     Chain {
         project: PathBuf,
         #[arg(long)]

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tstudio_dsp::SampleData;
-use tstudio_engine::{render_offline, PlayMode};
+use tstudio_engine::{compile_stems, render_offline, render_stems, stem_file_name, stem_jobs, PlayMode};
 use tstudio_library::{write_wav, WavFormat};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -40,13 +40,15 @@ impl ExportFormat {
 
 enum Msg {
     Progress(f32),
+    /// stem folder + number of files written
+    Stems(PathBuf, usize),
     Done(Result<PathBuf, String>),
 }
 
 enum Phase {
     Idle,
     /// Waiting for samples / stretch jobs to finish before rendering.
-    Preparing { path: PathBuf, mode: PlayMode },
+    Preparing { path: PathBuf, mode: PlayMode, stems: Option<PathBuf> },
     Rendering { rx: Receiver<Msg>, cancel: Arc<AtomicBool> },
 }
 
@@ -59,9 +61,14 @@ pub struct ExportState {
     song: bool,
     tail_secs: f64,
     normalize: bool,
+    /// also render one file per mixer insert (pre-master)
+    stems: bool,
+    /// target folder for stems (None = "<Name> Stems" next to the export)
+    stems_dir: Option<PathBuf>,
     progress: f32,
     phase: Phase,
     last: Option<Result<PathBuf, String>>,
+    last_stems: Option<(PathBuf, usize)>,
 }
 
 impl Default for ExportState {
@@ -74,9 +81,12 @@ impl Default for ExportState {
             song: true,
             tail_secs: 2.0,
             normalize: false,
+            stems: false,
+            stems_dir: None,
             progress: 0.0,
             phase: Phase::Idle,
             last: None,
+            last_stems: None,
         }
     }
 }
@@ -90,8 +100,8 @@ impl ExportState {
 pub fn poll(app: &mut TStudio) {
     match &app.export.phase {
         Phase::Idle => {}
-        Phase::Preparing { path, mode } => {
-            let (path, mode) = (path.clone(), *mode);
+        Phase::Preparing { path, mode, stems } => {
+            let (path, mode, stems_dir) = (path.clone(), *mode, stems.clone());
             // compiling requests every sample / stretch job the export needs
             let _ = crate::compile::compile(&app.project, &mut app.cache, true);
             app.cache.poll();
@@ -99,6 +109,12 @@ pub fn poll(app: &mut TStudio) {
                 return;
             }
             let snap = Arc::new(crate::compile::compile(&app.project, &mut app.cache, true));
+            // stem variants only differ in mixer settings: every sample is already prepared
+            let stem_set = stems_dir.map(|dir| {
+                let cache = &mut app.cache;
+                (dir, compile_stems(stem_jobs(&app.project), |q| crate::compile::compile(q, cache, true)))
+            });
+            let stem_renders: usize = stem_set.as_ref().map(|(_, j)| j.iter().map(|j| 1 + j.without.is_some() as usize).sum()).unwrap_or(0);
             let sr = app.engine.sample_rate;
             let (tx, rx) = crossbeam_channel::unbounded();
             let cancel = Arc::new(AtomicBool::new(false));
@@ -110,7 +126,10 @@ pub fn poll(app: &mut TStudio) {
             let ffmpeg = app.fetch.tools.ffmpeg.clone();
             let video = video_opts(app);
             // audio is the quick part of a video export
-            let audio_share = if fmt == ExportFormat::Mp4 { 0.15 } else { 1.0 };
+            let full = if fmt == ExportFormat::Mp4 { 0.15 } else { 1.0 };
+            // the main mix and every stem render take about equally long
+            let main_share = 1.0 / (1.0 + stem_renders as f32 / full);
+            let audio_share = full * main_share;
             std::thread::spawn(move || {
                 let tx2 = tx.clone();
                 let out: Option<SampleData> = render_offline(snap, sr, mode, tail, |p| {
@@ -136,7 +155,7 @@ pub fn poll(app: &mut TStudio) {
                             },
                             ExportFormat::Mp4 => match &ffmpeg {
                                 Some(f) => tstudio_fetch::video::export_mp4(f, &d, &path, &video, |p| {
-                                    let _ = tx.send(Msg::Progress(audio_share + (1.0 - audio_share) * p));
+                                    let _ = tx.send(Msg::Progress(audio_share + (main_share - audio_share) * p));
                                     !c2.load(Ordering::Relaxed)
                                 }),
                                 None => Err("ffmpeg nicht gefunden (winget install Gyan.FFmpeg)".into()),
@@ -144,6 +163,20 @@ pub fn poll(app: &mut TStudio) {
                         }
                         .map(|_| path)
                     }
+                };
+                let res = match (res, stem_set) {
+                    (Ok(path), Some((dir, jobs))) => {
+                        let tx3 = tx.clone();
+                        write_stems(&dir, jobs, sr, mode, tail, fmt, |p| {
+                            let _ = tx3.send(Msg::Progress(main_share + (1.0 - main_share) * p));
+                            !c2.load(Ordering::Relaxed)
+                        })
+                        .map(|n| {
+                            let _ = tx.send(Msg::Stems(dir, n));
+                            path
+                        })
+                    }
+                    (res, _) => res,
                 };
                 let _ = tx.send(Msg::Done(res));
             });
@@ -155,6 +188,7 @@ pub fn poll(app: &mut TStudio) {
             while let Ok(m) = rx.try_recv() {
                 match m {
                     Msg::Progress(p) => app.export.progress = p,
+                    Msg::Stems(dir, n) => app.export.last_stems = Some((dir, n)),
                     Msg::Done(r) => done = Some(r),
                 }
             }
@@ -250,6 +284,25 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
                 ui.label("Normalisieren");
                 ui.checkbox(&mut e.normalize, "");
                 ui.end_row();
+                ui.label("Stems");
+                ui.checkbox(&mut e.stems, "Stems exportieren").on_hover_text("Zusätzlich eine WAV pro Mixer-Insert (Busse einzeln, ohne Master-Effekte) – wie 	studio-cli render --stems");
+                ui.end_row();
+                if e.stems {
+                    ui.label("Zielordner");
+                    ui.horizontal(|ui| {
+                        let shown = e.stems_dir.as_ref().map(|d| d.display().to_string()).unwrap_or_else(|| "„<Name> Stems“ neben der Exportdatei".into());
+                        ui.label(egui::RichText::new(shown).small());
+                        if ui.small_button("Wählen…").clicked() {
+                            if let Some(d) = rfd::FileDialog::new().pick_folder() {
+                                e.stems_dir = Some(d);
+                            }
+                        }
+                        if e.stems_dir.is_some() && ui.small_button("✕").on_hover_text("Standardordner verwenden").clicked() {
+                            e.stems_dir = None;
+                        }
+                    });
+                    ui.end_row();
+                }
             });
             if matches!(e.format, ExportFormat::Mp3 | ExportFormat::Mp4) && !has_ffmpeg {
                 ui.colored_label(egui::Color32::from_rgb(240, 110, 90), "MP3/MP4 braucht ffmpeg: winget install Gyan.FFmpeg");
@@ -269,7 +322,7 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
             Phase::Preparing { .. } => {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label("Samples werden vorbereitet…");
+                    ui.label(if e.stems { "Samples und Stems werden vorbereitet…" } else { "Samples werden vorbereitet…" });
                 });
             }
             Phase::Rendering { cancel, .. } => {
@@ -293,6 +346,14 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
                     ui.colored_label(egui::Color32::from_rgb(240, 110, 90), err);
                 }
             }
+            if let (Ok(_), Some((dir, n))) = (r, &e.last_stems) {
+                ui.horizontal(|ui| {
+                    ui.label(format!("✔ {n} Stems in {}", dir.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()));
+                    if ui.small_button("Ordner öffnen").clicked() {
+                        open_folder(dir);
+                    }
+                });
+            }
         }
     });
     app.export.open = open || app.export.is_busy();
@@ -304,12 +365,49 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
         if let Some(path) = rfd::FileDialog::new().set_directory(&dir).set_file_name(format!("{stem}.{ext}")).add_filter(ext.to_uppercase(), &[ext]).save_file() {
             let path = if path.extension().is_none() { path.with_extension(ext) } else { path };
             app.export.last = None;
-            app.export.phase = Phase::Preparing { path, mode };
+            app.export.last_stems = None;
+            let stems = app.export.stems.then(|| app.export.stems_dir.clone().unwrap_or_else(|| default_stems_dir(&path)));
+            app.export.phase = Phase::Preparing { path, mode, stems };
             if app.export.format == ExportFormat::Mp4 {
                 // the CLI reads the DJ name from the settings file
                 app.settings.save(&app.paths.settings());
             }
         }
+    }
+}
+
+/// "<dir>/<file stem> Stems" next to the main export file.
+fn default_stems_dir(export: &std::path::Path) -> PathBuf {
+    let stem = export.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Export".into());
+    export.parent().map(|d| d.to_path_buf()).unwrap_or_default().join(format!("{stem} Stems"))
+}
+
+/// Renders all stems with the shared engine code and writes them as WAV (MP3/MP4 exports get 24-bit stems).
+fn write_stems(dir: &std::path::Path, jobs: Vec<tstudio_engine::StemJob<Arc<tstudio_engine::Snapshot>>>, sr: u32, mode: PlayMode, tail: f64, fmt: ExportFormat, progress: impl FnMut(f32) -> bool) -> Result<usize, String> {
+    if jobs.is_empty() {
+        return Err("Keine Stems: kein Mixer-Insert führt Signal (Kanäle/Audio-Clips auf Inserts legen)".into());
+    }
+    let stems = render_stems(jobs, sr, mode, tail, progress).ok_or("Abgebrochen")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let wav = match fmt {
+        ExportFormat::Wav16 => WavFormat::Pcm16,
+        ExportFormat::Wav32f => WavFormat::Float32,
+        _ => WavFormat::Pcm24,
+    };
+    for s in &stems {
+        write_wav(&dir.join(stem_file_name(s.track, &s.name, "wav")), &s.data, wav)?;
+    }
+    Ok(stems.len())
+}
+
+fn open_folder(dir: &std::path::Path) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer").arg(dir).spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = dir;
     }
 }
 

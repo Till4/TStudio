@@ -6,11 +6,10 @@ use crate::audio;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use tstudio_dsp::fx::{DistMode, DistParams, EffectParams, EqParams, FilterFxParams, LimiterParams, ReverbParams, SidechainParams};
-use tstudio_dsp::fx::{ClipperParams, MultibandParams, OttParams};
+use tstudio_dsp::fx::{ClipperParams, MultibandParams, OttParams, WidthParams};
 use tstudio_dsp::music::pitch_class;
-use tstudio_dsp::SampleData;
 use tstudio_engine::PlayMode;
-use tstudio_project::{ClipKind, FxSlot, Project, PPQ};
+use tstudio_project::{FxSlot, Project, PPQ};
 
 type R<T> = Result<T, String>;
 
@@ -273,106 +272,14 @@ pub fn shift_after(p: &mut Project, at: i64, delta: i64) {
 
 // ------------------------------------------------------------------ stems / mix
 
-fn content_tracks(p: &Project) -> BTreeSet<usize> {
-    let mut s = BTreeSet::new();
-    for c in &p.channels {
-        s.insert(c.mixer_track);
-    }
-    for c in &p.playlist.clips {
-        if let ClipKind::Audio(a) = &c.kind {
-            s.insert(a.mixer_track);
-        }
-    }
-    s.remove(&0);
-    s
-}
+pub use tstudio_engine::Stem;
 
-fn bus_sources(p: &Project, b: usize) -> (Vec<usize>, bool) {
-    let mut src = Vec::new();
-    let mut via_output = false;
-    for (i, t) in p.mixer.iter().enumerate().skip(1) {
-        if t.output == b {
-            src.push(i);
-            via_output = true;
-        } else if t.sends.iter().any(|s| s.target == b && s.amount > 0.0) {
-            src.push(i);
-        }
-    }
-    (src, via_output)
-}
-
-fn output_chain(p: &Project, mut t: usize) -> BTreeSet<usize> {
-    let mut s = BTreeSet::new();
-    for _ in 0..p.mixer.len() {
-        let o = p.mixer[t].output;
-        if o == 0 || o >= p.mixer.len() || !s.insert(o) {
-            break;
-        }
-        t = o;
-    }
-    s
-}
-
-fn render_with(p: &Project, sr: u32, solo: &[usize], mute: &[usize]) -> R<SampleData> {
-    let mut q = p.clone();
-    for (i, t) in q.mixer.iter_mut().enumerate() {
-        if i == 0 {
-            // stems are pre-master: no master limiter/EQ
-            for f in t.fx.iter_mut() {
-                f.enabled = false;
-            }
-            continue;
-        }
-        t.solo = solo.contains(&i);
-        if mute.contains(&i) {
-            t.muted = true;
-        }
-    }
-    Ok(audio::render(&q, sr, PlayMode::Song, 1.0)?.data)
-}
-
-pub struct Stem {
-    pub track: usize,
-    pub name: String,
-    pub data: SampleData,
-    pub bus: bool,
-}
-
-/// One render per mixer insert that carries sound (buses included, without master FX).
-pub fn render_stems(p: &Project, sr: u32) -> R<Vec<Stem>> {
-    let buses: BTreeSet<usize> = (1..p.mixer.len()).filter(|b| !bus_sources(p, *b).0.is_empty()).collect();
-    let content = content_tracks(p);
-    let mut out = Vec::new();
-    for t in 1..p.mixer.len() {
-        if p.mixer[t].muted {
-            continue;
-        }
-        if buses.contains(&t) {
-            let (src, via_output) = bus_sources(p, t);
-            let others: Vec<usize> = buses.iter().copied().filter(|b| *b != t).collect();
-            let data = if via_output {
-                render_with(p, sr, &src, &others)?
-            } else {
-                let with = render_with(p, sr, &src, &others)?;
-                let mut mute = others.clone();
-                mute.push(t);
-                let without = render_with(p, sr, &src, &mute)?;
-                let n = with.len().min(without.len());
-                SampleData::new(
-                    (0..n).map(|i| with.left[i] - without.left[i]).collect(),
-                    (0..n).map(|i| with.right[i] - without.right[i]).collect(),
-                    with.sample_rate,
-                )
-            };
-            out.push(Stem { track: t, name: p.mixer[t].name.clone(), data, bus: true });
-        } else if content.contains(&t) {
-            let chain = output_chain(p, t);
-            let mute: Vec<usize> = buses.iter().copied().filter(|b| !chain.contains(b)).collect();
-            let data = render_with(p, sr, &[t], &mute)?;
-            out.push(Stem { track: t, name: p.mixer[t].name.clone(), data, bus: false });
-        }
-    }
-    Ok(out)
+/// One render per mixer insert that carries sound (buses included, without master FX) –
+/// the same engine code as the GUI stem export.
+pub fn render_stems(p: &Project, sr: u32, mode: PlayMode, tail: f64) -> R<Vec<Stem>> {
+    let mut samples = audio::SyncSamples::new(sr);
+    let jobs = tstudio_engine::compile_stems(tstudio_engine::stem_jobs(p), |q| tstudio_engine::compile_project(q, &mut |path, st, bpm| samples.get(path, st, bpm), true));
+    tstudio_engine::render_stems(jobs, sr, mode, tail, |_| true).ok_or_else(|| "Rendern abgebrochen".to_string())
 }
 
 fn r1(v: f64) -> f64 {
@@ -442,13 +349,15 @@ pub fn stems_report(stems: &[Stem]) -> (Vec<Value>, Vec<Value>, Vec<String>) {
 
 // ------------------------------------------------------------------ fx chain presets
 
-pub const CHAINS: [(&str, &str); 6] = [
+pub const CHAINS: [(&str, &str); 8] = [
     ("schranz-kick", "Verzerrung + Clipper + EQ für eine harte, durchsetzungsfähige Kick"),
     ("rumble", "Reverb 100 % + Verzerrung + Tiefpass + Sidechain – auf einen Rumble-Bus (mit --source = Kick-Spur)"),
     ("master", "EQ, Multiband-Sättigung, Clipper, Limiter (-1 dBTP) – laut wie ein Release"),
     ("ott", "OTT-Kompression (30 %) für dichte Leads/Synths"),
     ("vocal", "EQ (Mulm raus, Präsenz rein), Kompressor, OTT leicht, Reverb"),
     ("bass", "Multiband-Sättigung + Kompressor + Sidechain zur Kick (mit --source)"),
+    ("wide", "Stereobreite 140 % für Pads/Leads/Hats, Bass unter 150 Hz bleibt mono"),
+    ("mono-bass", "Alles unter 120 Hz mono (Master/Bus: club-tauglicher Bass, Breite oben unverändert)"),
 ];
 
 pub fn chain(name: &str, source: Option<usize>) -> R<Vec<FxSlot>> {
@@ -490,6 +399,8 @@ pub fn chain(name: &str, source: Option<usize>) -> R<Vec<FxSlot>> {
             slot(EffectParams::Compressor(tstudio_dsp::fx::CompParams { threshold: -16.0, ratio: 4.0, attack_ms: 3.0, release_ms: 60.0, knee: 6.0, makeup: 2.0, mix: 1.0 })),
             sc(0.45, 90.0, -4.0)?,
         ],
+        "wide" => vec![slot(EffectParams::Width(WidthParams { width: 1.4, bass_mono_hz: 150.0, ..Default::default() }))],
+        "mono-bass" | "bass-mono" => vec![slot(EffectParams::Width(WidthParams { bass_mono_hz: 120.0, ..Default::default() }))],
         other => return Err(format!("Kette '{other}' unbekannt ({})", CHAINS.iter().map(|c| c.0).collect::<Vec<_>>().join(", "))),
     })
 }
@@ -497,6 +408,16 @@ pub fn chain(name: &str, source: Option<usize>) -> R<Vec<FxSlot>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_chain_preset_builds() {
+        for (name, _) in CHAINS {
+            let slots = chain(name, Some(1)).unwrap();
+            assert!(!slots.is_empty(), "{name}");
+        }
+        let wide = chain("wide", None).unwrap();
+        assert!(matches!(&wide[0].params, EffectParams::Width(w) if w.width > 1.0 && w.bass_mono_hz > 0.0));
+    }
 
     #[test]
     fn chords_parse() {
