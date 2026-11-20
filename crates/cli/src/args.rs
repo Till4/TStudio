@@ -186,6 +186,9 @@ pub(crate) enum Cmd {
     /// Tempo-Spur: Tempowechsel ab einem Takt (springend oder als Rampe)
     #[command(subcommand)]
     Tempo(TempoCmd),
+    /// Taktartwechsel (4/4 → 7/8 → 4/4 …); --bar bleibt überall 1-basiert und folgt den Wechseln
+    #[command(subcommand)]
+    Meter(MeterCmd),
     /// Tempo einer Datei ändern (Stretch = Tonhöhe bleibt, Resample = wie Platte)
     Stretch {
         input: PathBuf,

@@ -23,7 +23,7 @@ Dateien sind bewusst klein gehalten (Richtwert: < 600 Zeilen, danach in `<name>/
 - `synth_presets.rs` (Presets), `filter.rs`, `osc.rs`, `wavetable.rs`, `stretch.rs`, `meter.rs`, `isolate.rs`, `autotune.rs`
 
 **project**
-- `lib.rs` (Project, Kanäle, Clips), `automation.rs`, `tracks.rs`, `history.rs`, `tempo.rs` (Tempo-Spur: TempoPoint, TempoMap tick↔Sekunden)
+- `lib.rs` (Project, Kanäle, Clips), `automation.rs`, `tracks.rs`, `history.rs`, `tempo.rs` (Tempo-Spur: TempoPoint, TempoMap tick↔Sekunden), `meter.rs` (Taktartwechsel: MeterChange, BarMap Takt↔Tick, Metronom-Beats)
 
 **engine**
 - `core.rs` – `EngineCore` (process/process_chunk); `core/shared.rs` (Command, SharedState, PlayMode),
@@ -41,7 +41,7 @@ Dateien sind bewusst klein gehalten (Richtwert: < 600 Zeilen, danach in `<name>/
 
 **cli** (`crates/cli/src`)
 - `main.rs` (Einstieg, JSON-Ausgabe), `args.rs` (alle clap-Definitionen; `args/timeline.rs`: tempo/meter), `helpers.rs` (Laden/Speichern, Selektoren, JSON-Pfade, `info`)
-- `cmd/mod.rs` – `run`-Dispatch; pro Bereich `cmd/channel|pattern|notes|clip|fx|mixer|track|auto|marker|section|tempo.rs`
+- `cmd/mod.rs` – `run`-Dispatch; pro Bereich `cmd/channel|pattern|notes|clip|fx|mixer|track|auto|marker|section|tempo|meter.rs`
 - `audio.rs` (Analyse/Render), `tools.rs` (Akkorde, Sections, Hilfen), `spec.rs`, `live.rs`
 
 ## Konventionen beim Splitten

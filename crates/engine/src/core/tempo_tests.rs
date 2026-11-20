@@ -138,3 +138,44 @@ fn compile_fits_clips_to_tempo_at_their_start() {
     assert!(!snap.tempo.is_constant());
     let _ = click_sample(SR);
 }
+
+#[test]
+fn metronome_follows_time_signature_changes() {
+    use tstudio_project::{BarMap, MeterChange};
+    // 4/4 → 7/8 → 4/4 at 120 bpm: clicks on every quarter, then every eighth, accent on each bar's one
+    let mut s = Snapshot::empty();
+    s.bars = BarMap::new(4, &[MeterChange { bar: 1, beats_per_bar: 7, beat_unit: 8 }, MeterChange { bar: 2, beats_per_bar: 4, beat_unit: 4 }]);
+    s.song_end = 4 * PPQ + 7 * PPQ / 2 + 4 * PPQ;
+    let snap = Arc::new(s);
+    let rack = Box::new(Rack::build(&snap, SR as f32, MAX_CHUNK));
+    let mut core = EngineCore::new(SR as f32, snap, rack, Arc::new(SharedState::new(SR)));
+    core.stop_at_end = true;
+    let mut gc = |_g: Garbage| {};
+    core.handle(Command::SetMode(PlayMode::Song), &mut gc);
+    core.handle(Command::SetMetronome(true), &mut gc);
+    core.handle(Command::Play, &mut gc);
+    let frames = SR as usize * 6;
+    let mut l = vec![0.0; frames];
+    let mut r = vec![0.0; frames];
+    core.process(&mut l, &mut r);
+    // click onsets (first sample above a threshold) and whether they are accented (louder)
+    let mut clicks = Vec::new();
+    let mut i = 0;
+    while i < frames {
+        if l[i].abs() > 0.01 {
+            let peak = l[i..(i + 1000).min(frames)].iter().fold(0.0f32, |m, x| m.max(x.abs()));
+            clicks.push((i, peak > 0.4));
+            i += 2000;
+        } else {
+            i += 1;
+        }
+    }
+    // 120 bpm: 250 samples per tick → onset tick
+    let ticks: Vec<usize> = clicks.iter().map(|c| (c.0 + 125) / 250).collect();
+    let mut expect: Vec<usize> = (0..4).map(|k| k * 96).collect();
+    expect.extend((0..7).map(|k| 384 + k * 48));
+    expect.extend((0..4).map(|k| 384 + 336 + k * 96));
+    assert_eq!(ticks, expect);
+    let downs: Vec<usize> = clicks.iter().zip(&ticks).filter(|(c, _)| c.1).map(|(_, t)| *t).collect();
+    assert_eq!(downs, vec![0, 384, 720]);
+}

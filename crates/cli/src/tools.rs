@@ -178,7 +178,7 @@ pub fn bar_tick(p: &Project, s: &str) -> R<i64> {
         if b < 1.0 {
             return Err(format!("Takt {b}: der Song beginnt bei Takt 1"));
         }
-        return Ok(((b - 1.0) * p.ticks_per_bar() as f64).round() as i64);
+        return Ok(p.bar_number_to_tick(b));
     }
     p.playlist.marker(s).map(|m| m.tick).ok_or_else(|| {
         format!(
@@ -189,7 +189,7 @@ pub fn bar_tick(p: &Project, s: &str) -> R<i64> {
 }
 
 pub fn tick_bar(p: &Project, t: i64) -> f64 {
-    (t as f64 / p.ticks_per_bar() as f64 * 1000.0).round() / 1000.0 + 1.0
+    (p.tick_to_bar_number(t) * 1000.0).round() / 1000.0
 }
 
 /// Copies every clip that starts in [from, from+len) to `to` (shifted). Returns the number of copies.
@@ -246,6 +246,21 @@ pub fn shift_after(p: &mut Project, at: i64, delta: i64) {
         }
     }
     p.sort_tempo();
+    // time-signature changes too (they are stored by bar: re-derive the bar after moving)
+    let old = p.bar_map();
+    let moved: Vec<(i64, tstudio_project::MeterChange)> = p
+        .meters
+        .iter()
+        .map(|m| (old.bar_to_tick(m.bar as f64).round() as i64, *m))
+        .filter(|(t, _)| delta >= 0 || *t < at + delta || *t >= at)
+        .map(|(t, m)| (if t >= at { t + delta } else { t }, m))
+        .collect();
+    p.meters.clear();
+    for (t, m) in moved {
+        let bar = p.bar_map().tick_to_bar(t as f64).round().max(1.0) as u32;
+        p.meters.push(tstudio_project::MeterChange { bar, ..m });
+    }
+    p.sort_meters();
     if let Some((a, b)) = p.playlist.loop_region.as_mut() {
         if *a >= at {
             *a += delta;

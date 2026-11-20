@@ -6,7 +6,7 @@ use tstudio_dsp::sampler::{Sampler, SamplerParams};
 use tstudio_dsp::synth::{Synth, SynthParams};
 use tstudio_dsp::SampleData;
 use tstudio_project::automation::value_at;
-use tstudio_project::{AutoTarget, TempoMap};
+use tstudio_project::{AutoTarget, BarMap, TempoMap};
 
 use crate::soundfont::{SfProc, Sf2};
 
@@ -17,6 +17,8 @@ pub struct Snapshot {
     /// song tempo curve (tempo track); constant `bpm` when the project has no tempo points
     pub tempo: TempoMap,
     pub beats_per_bar: u32,
+    /// song bar grid (time-signature changes); metronome accents follow it
+    pub bars: BarMap,
     pub channels: Vec<ChannelSnap>,
     pub patterns: Vec<PatternSnap>,
     pub clips: Vec<ClipSnap>,
@@ -140,6 +142,7 @@ impl Snapshot {
             bpm: 120.0,
             tempo: TempoMap::constant(120.0),
             beats_per_bar: 4,
+            bars: BarMap::new(4, &[]),
             channels: Vec::new(),
             patterns: Vec::new(),
             clips: Vec::new(),

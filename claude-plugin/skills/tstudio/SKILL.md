@@ -117,6 +117,9 @@ $CLI tempo list song.tsp   |  $CLI tempo remove song.tsp --bar 33  |  $CLI tempo
 # Audio-Clips mit --stretch folgen dem Tempo am Clip-Anfang; ändert sich das Tempo innerhalb des Clips,
 # läuft er per Varispeed synchron mit (Tonhöhe ändert sich dabei leicht). Clips ohne Stretch spielen in Echtzeit.
 
+# Taktartwechsel (GUI: Rechtsklick in die Tempo-Spur → „Taktart ab Takt N“); alle --bar-Angaben folgen den Wechseln
+$CLI meter add song.tsp --bar 9 7/8 | meter add song.tsp --bar 10 4/4 | meter list song.tsp | meter remove song.tsp --bar 9
+
 # Mixer / Effekte (Kanal → mixer_track aus `info`)
 $CLI fx add song.tsp --track 2 reverb      # eq compressor reverb delay distortion chorus filter limiter sidechain autotune clipper multiband ott
 $CLI fx chain song.tsp --track 1 schranz-kick [--replace]     # fertige Ketten: schranz-kick, master, ott, vocal, bass (--source Kick), rumble (--source Kick)

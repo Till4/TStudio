@@ -195,11 +195,18 @@ impl TStudio {
             }
             ui.separator();
             let pos = self.position();
-            let bar = self.project.ticks_per_bar() as f64;
-            let b = (pos / bar).floor() as i64 + 1;
-            let beat = ((pos % bar) / PPQ as f64).floor() as i64 + 1;
-            let step = ((pos % PPQ as f64) / (PPQ as f64 / 4.0)).floor() as i64 + 1;
+            // song: bar/beat follow time-signature changes; patterns use the project meter
+            let bars = if self.song_mode { self.project.bar_map() } else { tstudio_project::BarMap::new(self.project.beats_per_bar, &[]) };
+            let b = bars.tick_to_bar(pos).floor() as i64 + 1;
+            let (bar_start, _) = bars.bar_bounds(pos as i64);
+            let beat_t = bars.meter_at(pos).beat_ticks as f64;
+            let in_bar = pos - bar_start as f64;
+            let beat = (in_bar / beat_t).floor() as i64 + 1;
+            let step = ((in_bar % beat_t) / (PPQ as f64 / 4.0)).floor() as i64 + 1;
             ui.label(RichText::new(format!("{b:>3}:{beat}:{step}")).monospace().size(15.0).color(ACCENT));
+            if self.song_mode && !self.project.tempo.is_empty() {
+                ui.label(RichText::new(format!("♩ {:.1}", self.project.bpm_at(pos as i64))).monospace().color(TEXT_DIM)).on_hover_text("aktuelles Tempo (Tempo-Spur)");
+            }
             ui.separator();
             ui::rack::pattern_selector(self, ui);
             ui.separator();

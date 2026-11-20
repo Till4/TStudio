@@ -10,9 +10,11 @@ use tstudio_dsp::synth::SynthParams;
 
 pub mod automation;
 pub mod history;
+pub mod meter;
 pub mod tempo;
 pub mod tracks;
 pub use automation::{AutoPoint, AutoTarget, AutomationClip};
+pub use meter::{BarMap, MeterChange};
 pub use tempo::{TempoMap, TempoPoint};
 pub use history::History;
 
@@ -43,6 +45,8 @@ pub struct Project {
     pub next_id: Id,
     /// tempo changes after tick 0 (`bpm` is the start tempo), sorted by tick
     pub tempo: Vec<TempoPoint>,
+    /// time-signature changes at bars (`beats_per_bar` is the meter of bar 1), sorted by bar
+    pub meters: Vec<MeterChange>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -394,6 +398,7 @@ impl Default for Project {
             mixer,
             next_id: 1,
             tempo: Vec::new(),
+            meters: Vec::new(),
         }
     }
 }
@@ -601,6 +606,7 @@ impl Project {
             self.bpm = 120.0;
         }
         self.sort_tempo();
+        self.sort_meters();
         let max_id = self
             .channels
             .iter()

@@ -536,16 +536,24 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
     }
     let t0 = tick_of(grid.left()).max(0.0) as i64;
     let t1 = tick_of(grid.right()) as i64 + 1;
-    let beat_px = ppb;
-    let mut t = floor_to(t0, PPQ);
-    while t <= t1 {
-        let x = x_of(t as f64);
-        if t % bar == 0 {
+    // bar/beat grid follows time-signature changes (7/8 bars show eighth beats)
+    let bars = app.project.bar_map();
+    let mut t = bars.bar_bounds(t0).0 as f64;
+    let mut guard = 0;
+    while t <= t1 as f64 && guard < 20000 {
+        guard += 1;
+        let (beat, down) = bars.beat_at_or_after(t);
+        if beat > t1 {
+            break;
+        }
+        let x = x_of(beat as f64);
+        let beat_px = ppb * bars.meter_at(beat as f64).beat_ticks as f32 / PPQ as f32;
+        if down {
             gp.line_segment([pos2(x, grid.top()), pos2(x, grid.bottom())], Stroke::new(1.0, GRID_BAR));
         } else if beat_px > 8.0 {
             gp.line_segment([pos2(x, grid.top()), pos2(x, grid.bottom())], Stroke::new(1.0, GRID_BEAT));
         }
-        t += PPQ;
+        t = beat as f64 + 1.0;
     }
     if let Some((a, b)) = app.project.playlist.loop_region {
         gp.rect_filled(Rect::from_min_max(pos2(x_of(a as f64), grid.top()), pos2(x_of(b as f64), grid.bottom())), 0.0, ACCENT.gamma_multiply(0.06));
@@ -711,15 +719,18 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
     }
     let bar_px = ppb * (bar / PPQ) as f32;
     let label_every = ((40.0 / bar_px).ceil() as i64).max(1);
-    let mut b = floor_to(t0, bar);
-    while b <= t1 {
+    let mut n = bars.tick_to_bar(t0 as f64).floor().max(0.0) as i64;
+    loop {
+        let b = bars.bar_to_tick(n as f64).round() as i64;
+        if b > t1 {
+            break;
+        }
         let x = x_of(b as f64);
-        let n = b / bar;
         if n % label_every == 0 {
             rp.line_segment([pos2(x, ruler.top() + 10.0), pos2(x, ruler.bottom())], Stroke::new(1.0, TEXT_DIM));
             rp.text(pos2(x + 3.0, ruler.center().y - 2.0), Align2::LEFT_CENTER, format!("{}", n + 1), FontId::proportional(11.0), TEXT_DIM);
         }
-        b += bar;
+        n += 1;
     }
     // song markers (Intro, Drop …): flag in the ruler + faint line through the tracks
     const MARKER: Color32 = Color32::from_rgb(255, 196, 70);

@@ -135,6 +135,7 @@ pub fn compile_project(p: &Project, samples: &mut SampleSource<'_>, for_export: 
         bpm: p.bpm,
         tempo: p.tempo_map(),
         beats_per_bar: p.beats_per_bar,
+        bars: p.bar_map(),
         channels,
         patterns,
         clips,

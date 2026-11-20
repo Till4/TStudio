@@ -157,7 +157,8 @@ pub(crate) fn info(p: &Project) -> Value {
         "song_length_s": (p.tick_to_time(p.song_length() as f64) * 1000.0).round() / 1000.0,
         "swing": p.swing,
         "master_volume": p.mixer[0].volume,
-        "song_length_bars": p.song_length() as f64 / bar as f64,
+        "song_length_bars": p.tick_to_bar_number(p.song_length()) - 1.0,
+        "meters": p.meters.iter().map(|m| json!({"bar": m.bar + 1, "meter": m.label()})).collect::<Vec<_>>(),
         "channels": p.channels.iter().enumerate().map(|(i, c)| {
             let mut v = json!({"index": i, "name": c.name, "type": c.instrument.kind_name(), "mixer_track": c.mixer_track, "volume": c.volume, "pan": c.pan, "muted": c.muted});
             if let Instrument::Sampler(s) = &c.instrument {
@@ -192,7 +193,7 @@ pub(crate) fn info(p: &Project) -> Value {
                 ClipKind::Automation(a) => json!({"automation": a.target, "points": a.points.len(),
                     "from": a.points.first().map(|q| q.v), "to": a.points.last().map(|q| q.v)}),
             };
-            json!({"id": c.id, "track": c.track + 1, "bar": c.start as f64 / bar as f64 + 1.0, "bars": c.len as f64 / bar as f64, "muted": c.muted, "content": what})
+            json!({"id": c.id, "track": c.track + 1, "bar": p.tick_to_bar_number(c.start), "bars": p.tick_to_bar_number(c.end()) - p.tick_to_bar_number(c.start), "muted": c.muted, "content": what})
         }).collect::<Vec<_>>(),
         "mixer": p.mixer.iter().enumerate().filter(|(i, t)| *i == 0 || !t.fx.is_empty() || p.channels.iter().any(|c| c.mixer_track == *i) || (t.volume - 0.8).abs() > 1e-4 || t.muted || t.solo
                 || t.output != 0 || !t.sends.is_empty() || p.mixer.iter().any(|o| o.output == *i || o.sends.iter().any(|s| s.target == *i)))

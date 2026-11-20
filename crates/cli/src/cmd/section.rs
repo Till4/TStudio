@@ -16,7 +16,7 @@ pub(crate) fn parse_tracks(s: &Option<String>, p: &Project) -> R<Option<std::col
 pub(crate) fn range_ticks(p: &Project, r: &Range) -> R<(i64, i64)> {
     let from = tools::bar_tick(p, &r.from)?;
     let len = match r.bars {
-        Some(b) if b > 0.0 => (b * p.ticks_per_bar() as f64).round() as i64,
+        Some(b) if b > 0.0 => p.bars_to_ticks_from(from, b),
         Some(_) => return Err("--bars muss > 0 sein".into()),
         None => {
             let next = p.playlist.markers.iter().map(|m| m.tick).filter(|t| *t > from).min();
@@ -38,7 +38,7 @@ pub(crate) fn section_cmd(c: SectionCmd) -> R<Value> {
             let tracks = parse_tracks(&r.tracks, &p)?;
             let n = tools::section_copy(&mut p, from, len, to_t, tracks.as_ref());
             save(&r.project, &mut p)?;
-            Ok(json!({"ok": true, "copied_clips": n, "from_bar": tools::tick_bar(&p, from), "bars": len as f64 / p.ticks_per_bar() as f64, "to_bar": tools::tick_bar(&p, to_t)}))
+            Ok(json!({"ok": true, "copied_clips": n, "from_bar": tools::tick_bar(&p, from), "bars": tools::tick_bar(&p, from + len) - tools::tick_bar(&p, from), "to_bar": tools::tick_bar(&p, to_t)}))
         }
         SectionCmd::Clear { r } => {
             let mut p = load(&r.project)?;
@@ -51,7 +51,7 @@ pub(crate) fn section_cmd(c: SectionCmd) -> R<Value> {
         SectionCmd::Insert { project, at, bars } => {
             let mut p = load(&project)?;
             let at_t = tools::bar_tick(&p, &at)?;
-            let len = (bars * p.ticks_per_bar() as f64).round() as i64;
+            let len = p.bars_to_ticks_from(at_t, bars);
             if len <= 0 {
                 return Err("--bars muss > 0 sein".into());
             }
@@ -71,11 +71,12 @@ pub(crate) fn section_cmd(c: SectionCmd) -> R<Value> {
                 return Err("delete wirkt auf alle Spuren (für einzelne Spuren: section clear)".into());
             }
             let (from, len) = range_ticks(&p, &r)?;
+            let removed_bars = tools::tick_bar(&p, from + len) - tools::tick_bar(&p, from);
             let n = tools::section_clear(&mut p, from, len, None);
             p.playlist.markers.retain(|m| m.tick < from || m.tick >= from + len);
             tools::shift_after(&mut p, from + len, -len);
             save(&r.project, &mut p)?;
-            Ok(json!({"ok": true, "removed_clips": n, "removed_bars": len as f64 / p.ticks_per_bar() as f64}))
+            Ok(json!({"ok": true, "removed_clips": n, "removed_bars": removed_bars}))
         }
     }
 }

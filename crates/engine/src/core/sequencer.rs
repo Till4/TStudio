@@ -254,12 +254,26 @@ pub(super) fn sequence(
         }
 
         // metronome
+        // metronome: one click per beat of the current meter (7/8 = eighths), accent on the bar's one;
+        // time-signature changes only apply to the song, patterns use the project meter
         if metronome {
-            let mut k = (a / PPQ as f64).ceil() as i64;
-            while ((k * PPQ) as f64) < b {
-                let down = k % snap.beats_per_bar.max(1) as i64 == 0;
-                push_event(events, Event { frame: to_frame((k * PPQ) as f64), channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) });
-                k += 1;
+            if song && !snap.bars.is_constant() {
+                let mut t = a;
+                loop {
+                    let (tick, down) = snap.bars.beat_at_or_after(t);
+                    if tick as f64 >= b {
+                        break;
+                    }
+                    push_event(events, Event { frame: to_frame(tick as f64), channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) });
+                    t = tick as f64 + 1.0;
+                }
+            } else {
+                let mut k = (a / PPQ as f64).ceil() as i64;
+                while ((k * PPQ) as f64) < b {
+                    let down = k % snap.beats_per_bar.max(1) as i64 == 0;
+                    push_event(events, Event { frame: to_frame((k * PPQ) as f64), channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) });
+                    k += 1;
+                }
             }
         }
 
