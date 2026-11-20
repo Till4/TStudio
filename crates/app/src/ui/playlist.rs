@@ -10,7 +10,9 @@ use tstudio_project::{AutoPoint, AutomationClip, ClipKind, Id, Project, PPQ};
 mod menus;
 mod automation;
 mod properties;
+mod fades;
 
+use fades::*;
 use menus::*;
 use automation::*;
 use properties::*;
@@ -19,6 +21,8 @@ enum PDrag {
     Move { anchor_tick: f64, anchor_track: i64, orig: Vec<(Id, i64, usize)> },
     ResizeR { anchor_tick: f64, orig: Vec<(Id, i64)> },
     ResizeL { anchor_tick: f64, orig: Vec<(Id, i64, i64, i64)> },
+    /// fade handle of an audio clip (`out` = fade-out at the right end)
+    Fade { id: Id, out: bool },
     Loop { from: i64 },
 }
 
@@ -186,6 +190,27 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
         }
         None
     };
+    // fade handles sit in the header strip of audio clips (like Ableton/FL): (id, is fade-out)
+    let fade_hit = |p: &Project, pt: Pos2| -> Option<(Id, bool)> {
+        for c in p.playlist.clips.iter().rev() {
+            let r = clip_rect(c);
+            if !r.contains(pt) {
+                continue;
+            }
+            let ClipKind::Audio(a) = &c.kind else { return None };
+            if pt.y > r.top() + FADE_HANDLE_BAND || r.width() < FADE_MIN_CLIP_PX {
+                return None;
+            }
+            let (xi, xo) = fade_handle_xs(r, x_of((c.start + a.fade_in) as f64), x_of((c.end() - a.fade_out) as f64));
+            let (di, d_o) = ((pt.x - xi).abs(), (pt.x - xo).abs());
+            return if di.min(d_o) > FADE_GRAB_PX {
+                None
+            } else {
+                Some((c.id, d_o < di))
+            };
+        }
+        None
+    };
 
     // ---------------------------------------------------------------- interaction
     let grid_resp = ui.interact(grid, ui.id().with("pl_grid"), Sense::click_and_drag());
@@ -195,7 +220,9 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
     let mut open_pattern: Option<Id> = None;
 
     if let Some(pt) = pointer {
-        if grid_top && app.playlist_ui.drag.is_none() {
+        if grid_top && app.playlist_ui.drag.is_none() && fade_hit(&app.project, pt).is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        } else if grid_top && app.playlist_ui.drag.is_none() {
             if let Some((_, side)) = hit(&app.project, pt) {
                 if side != 0 {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -217,7 +244,13 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
             let t = tick_of(pt.x);
             let tr = track_of(pt.y).max(0);
             let st = &mut app.playlist_ui;
-            if let Some((id, side)) = hit(&app.project, pt) {
+            if let Some((id, out)) = fade_hit(&app.project, pt) {
+                if !mods.shift {
+                    st.selected.clear();
+                }
+                st.selected.insert(id);
+                st.drag = Some(PDrag::Fade { id, out });
+            } else if let Some((id, side)) = hit(&app.project, pt) {
                 if !st.selected.contains(&id) {
                     if !mods.shift {
                         st.selected.clear();
@@ -303,8 +336,24 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
                         }
                     }
                 }
+                Some(PDrag::Fade { id, out }) => {
+                    // free (unsnapped) like in other DAWs; Shift = snap to the grid
+                    let snap = if mods.shift { snap_t.max(1) } else { 1 };
+                    if let Some(c) = app.project.playlist.clips.iter_mut().find(|c| c.id == *id) {
+                        let (start, end, len) = (c.start, c.end(), c.len);
+                        if let ClipKind::Audio(a) = &mut c.kind {
+                            if *out {
+                                let f = round_to(end - t as i64, snap);
+                                a.fade_out = f.clamp(0, len - a.fade_in);
+                            } else {
+                                let f = round_to(t as i64 - start, snap);
+                                a.fade_in = f.clamp(0, len - a.fade_out);
+                            }
+                        }
+                    }
+                }
                 Some(PDrag::Loop { from }) => {
-                    let to = round_to(t as i64, snap_t.max(PPQ)).max(0);
+                    let to =round_to(t as i64, snap_t.max(PPQ)).max(0);
                     let (a, b) = if to >= *from { (*from, to) } else { (to, *from) };
                     app.project.playlist.loop_region = if b > a { Some((a, b)) } else { None };
                 }
@@ -656,6 +705,13 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
                 } else {
                     gp.text(body.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, "lädt…", FontId::proportional(10.0), TEXT_DIM);
                 }
+                let hover = if app.playlist_ui.drag.is_none() { pointer.filter(|_| grid_top).and_then(|pt| fade_hit(&app.project, pt)) } else { None };
+                let dragging = match &app.playlist_ui.drag {
+                    Some(PDrag::Fade { id, out }) if *id == c.id => Some(*out),
+                    _ => None,
+                };
+                let active = |out: bool| dragging == Some(out) || hover == Some((c.id, out));
+                draw_fades(&gp.with_clip_rect(r.intersect(grid)), r, body, x_of((c.start + a.fade_in) as f64), x_of((c.end() - a.fade_out) as f64), active(false), active(true), alpha);
             }
             ClipKind::Automation(a) => {
                 let col = AUTO_COLOR;
