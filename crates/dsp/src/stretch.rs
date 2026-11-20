@@ -1,7 +1,10 @@
-//! Tempo changes for samples: pitch-preserving time-stretch (WSOLA) and
-//! vinyl-style resampling.
+//! Tempo changes for samples: pitch-preserving time-stretch (phase vocoder,
+//! WSOLA for very short sounds) and vinyl-style resampling.
 
 use crate::sample::SampleData;
+
+mod pvoc;
+pub use pvoc::pv_stretch;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default, Hash)]
@@ -71,8 +74,21 @@ pub fn pitch_shift(input: &SampleData, semis: f32) -> SampleData {
     time_stretch(input, pr).resample_speed(pr)
 }
 
-/// WSOLA time-stretch. Output length ≈ `input.len() * factor`. Pitch is preserved.
+/// Time-stretch, pitch preserved. Output length ≈ `input.len() * factor`.
+/// Phase vocoder for anything longer than a few frames, WSOLA for tiny one-shots.
 pub fn time_stretch(input: &SampleData, factor: f64) -> SampleData {
+    let n_in = input.len();
+    if n_in == 0 || (factor - 1.0).abs() < 1e-6 || factor <= 0.0 {
+        return input.clone();
+    }
+    if n_in >= 4 * pvoc::frame_size(input.sample_rate) {
+        return pv_stretch(input, factor);
+    }
+    wsola_stretch(input, factor)
+}
+
+/// WSOLA time-stretch (the previous algorithm; still used for very short sounds).
+pub fn wsola_stretch(input: &SampleData, factor: f64) -> SampleData {
     let n_in = input.len();
     if n_in == 0 || (factor - 1.0).abs() < 1e-6 || factor <= 0.0 {
         return input.clone();
@@ -236,5 +252,79 @@ mod tests {
         assert!((out.len() as i64 - expected).abs() <= 4);
         let f = zero_crossing_freq(&out.left, 22050);
         assert!((f - 880.0).abs() < 880.0 * 0.04, "got {f}");
+    }
+
+    /// Fraction of the spectral energy that lies within ±`bw` Hz of the given partials.
+    fn purity(x: &[f32], sr: u32, partials: &[f32], bw: f32) -> f64 {
+        let n = 1 << 15;
+        let off = (x.len() - n) / 2;
+        let w = crate::fft::hann(n);
+        let mut re: Vec<f64> = (0..n).map(|i| x[off + i] as f64 * w[i]).collect();
+        let mut im = vec![0.0; n];
+        crate::fft::fft(&mut re, &mut im, false);
+        let (mut near, mut all) = (0.0, 1e-12);
+        for b in 1..n / 2 {
+            let e = re[b] * re[b] + im[b] * im[b];
+            let f = b as f32 * sr as f32 / n as f32;
+            all += e;
+            if partials.iter().any(|p| (f - p).abs() <= bw) {
+                near += e;
+            }
+        }
+        near / all
+    }
+
+    fn chord(secs: f32, sr: u32) -> SampleData {
+        let n = (secs * sr as f32) as usize;
+        let fs = [220.0f32, 277.18, 329.63, 440.0];
+        let v: Vec<f32> = (0..n).map(|i| fs.iter().map(|f| (std::f32::consts::TAU * f * i as f32 / sr as f32).sin()).sum::<f32>() * 0.2).collect();
+        SampleData::new(v.clone(), v, sr)
+    }
+
+    #[test]
+    fn phase_vocoder_is_cleaner_than_wsola_on_chords() {
+        let sr = 44100;
+        let s = chord(3.0, sr);
+        let fs = [220.0f32, 277.18, 329.63, 440.0];
+        for factor in [0.67, 0.85, 1.3] {
+            let pv = purity(&pv_stretch(&s, factor).left, sr, &fs, 6.0);
+            let ws = purity(&wsola_stretch(&s, factor).left, sr, &fs, 6.0);
+            assert!(pv > 0.995, "factor {factor}: phase vocoder purity {pv}");
+            assert!(pv >= ws, "factor {factor}: pv {pv} < wsola {ws}");
+        }
+    }
+
+    #[test]
+    fn phase_vocoder_keeps_stereo_and_transients() {
+        let sr = 44100;
+        let n = sr as usize * 2;
+        // clicks every 0.25 s, right channel inverted
+        let l: Vec<f32> = (0..n).map(|i| if i % (sr as usize / 4) < 20 { 0.9 } else { 0.0 }).collect();
+        let r: Vec<f32> = l.iter().map(|v| -v).collect();
+        let out = pv_stretch(&SampleData::new(l.clone(), r, sr), 0.7);
+        // stereo: still inverted
+        let corr: f32 = out.left.iter().zip(&out.right).map(|(a, b)| a * b).sum();
+        assert!(corr < 0.0, "stereo image lost");
+        check_clicks(&out, sr);
+        // same clicks in mono on top of a sustained chord (kick over a pad)
+        let pad = chord(2.0, sr);
+        let mixed: Vec<f32> = l.iter().zip(&pad.left).map(|(c, p)| c + 0.3 * p).collect();
+        let out = pv_stretch(&SampleData::new(mixed.clone(), mixed, sr), 0.7);
+        check_clicks(&out, sr);
+    }
+
+    fn check_clicks(out: &SampleData, sr: u32) {
+        // transients: every click comes out as a distinct peak at its stretched place
+        // (measured on the first difference, so a low pad underneath does not count)
+        let x: Vec<f32> = out.left.windows(2).map(|w| w[1] - w[0]).collect();
+        let step = (sr as f64 / 4.0 * 0.7) as usize;
+        let peak = x.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        for k in 1..7 {
+            let c = k * step;
+            let local = x[c - 200..c + 400].iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            let between = x[c + step / 2 - 300..c + step / 2 + 300].iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            assert!(local > 0.5 * peak, "click {k} lost ({local} vs {peak})");
+            assert!(between < 0.3 * local, "click {k} smeared ({between} vs {local})");
+        }
     }
 }
