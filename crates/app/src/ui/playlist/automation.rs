@@ -36,6 +36,24 @@ pub(super) fn curve_points(points: &[AutoPoint], len: i64, range: (f32, f32, boo
     out
 }
 
+/// "Automation erstellen" from a parameter's right-click menu (mixer / TSynth):
+/// new clip at the playhead, then the playlist opens with it selected.
+pub fn create_automation(app: &mut TStudio, path: &str) {
+    if app.project.parse_auto_target(path).is_err() {
+        return;
+    }
+    add_automation_clip(app, path);
+    app.view = View::Playlist;
+}
+
+/// Right-click menu entry for an automatable control; sets `req` to the target path when chosen.
+pub fn automation_menu_item(ui: &mut Ui, path: String, req: &mut Option<String>) {
+    if ui.button("〰 Automation erstellen").on_hover_text(format!("Automation-Clip für {path} am Playhead anlegen")).clicked() {
+        *req = Some(path);
+        ui.close_menu();
+    }
+}
+
 /// New automation clip at the playhead (4 bars, flat at the current value).
 pub(super) fn add_automation_clip(app: &mut TStudio, path: &str) {
     let Ok(target) = app.project.parse_auto_target(path) else { return };
@@ -48,7 +66,7 @@ pub(super) fn add_automation_clip(app: &mut TStudio, path: &str) {
     let id = app.project.add_clip(track, start, len, ClipKind::Automation(clip));
     app.playlist_ui.selected = [id].into_iter().collect();
     app.song_mode = true;
-    app.set_status("Automation-Clip angelegt – Kurve unten bearbeiten (Klick: Punkt, Ziehen: verschieben, Rechtsklick: löschen)");
+    app.set_status("Automation-Clip angelegt – Kurve direkt im Clip zeichnen (Klick: Punkt, Ziehen: verschieben, Rechtsklick: löschen, Alt: ohne Raster)");
 }
 
 /// Gives an audio clip its own mixer insert (if it still plays on the master) and lays an automation

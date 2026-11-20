@@ -70,7 +70,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, ci: usize) {
     let Instrument::Synth(p) = &mut ch.instrument else { return };
 
     header(ui, st, p, &presets_dir, &mut status);
-    page_tabs(ui, st, p);
+    let auto_req = page_tabs(ui, st, p);
     ui.add_space(GAP);
     match st.page {
         Page::Sound => sound_page(ui, p),
@@ -82,10 +82,26 @@ pub fn show(app: &mut TStudio, ui: &mut Ui, ci: usize) {
     if let Some(s) = status {
         app.set_status(s);
     }
+    if let Some(f) = auto_req {
+        crate::ui::playlist::create_automation(app, &format!("channel.{ci}.synth.{f}"));
+    }
 }
 
-fn page_tabs(ui: &mut Ui, st: &mut SynthUiState, p: &SynthParams) {
-    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+/// Page tabs; right click on the bar = "Automation erstellen" for any TSynth parameter.
+fn page_tabs(ui: &mut Ui, st: &mut SynthUiState, p: &SynthParams) -> Option<&'static str> {
+    let (bar, bar_resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+    let mut auto_req = None;
+    bar_resp.context_menu(|ui| {
+        ui.label(RichText::new("〰 Automation erstellen für …").strong());
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for f in SynthParams::FIELDS {
+                if ui.button(*f).clicked() {
+                    auto_req = Some(*f);
+                    ui.close_menu();
+                }
+            }
+        });
+    });
     ui.painter().line_segment([pos2(bar.left(), bar.bottom() - 0.5), pos2(bar.right(), bar.bottom() - 0.5)], Stroke::new(1.0f32, CARD_EDGE));
     let mut x = bar.left() + 2.0;
     for (pg, name) in Page::ALL {
@@ -117,6 +133,7 @@ fn page_tabs(ui: &mut Ui, st: &mut SynthUiState, p: &SynthParams) {
         if p.kick.enabled { "Kick-Engine" } else { "Synth" }
     );
     ui.painter().text(pos2(bar.right() - 6.0, bar.center().y), Align2::RIGHT_CENTER, info, FontId::proportional(11.0), TEXT_DIM);
+    auto_req
 }
 
 fn header(ui: &mut Ui, st: &mut SynthUiState, p: &mut SynthParams, presets_dir: &std::path::Path, status: &mut Option<String>) {

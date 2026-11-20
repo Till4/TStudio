@@ -44,6 +44,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
 }
 
 fn strip(app: &mut TStudio, ui: &mut Ui, t: usize) {
+    let mut auto_req: Option<String> = None;
     let selected = app.mixer_ui.selected == t;
     let (l, r) = app.meters.get(t).copied().unwrap_or((0.0, 0.0));
     let users: Vec<String> = app.project.channels.iter().filter(|c| c.mixer_track == t).map(|c| c.name.clone()).collect();
@@ -79,9 +80,11 @@ fn strip(app: &mut TStudio, ui: &mut Ui, t: usize) {
                     if resp.double_clicked() {
                         tr.volume = if t == 0 { 1.0 } else { 0.8 };
                     }
+                    resp.context_menu(|ui| crate::ui::playlist::automation_menu_item(ui, format!("mixer.{t}.volume"), &mut auto_req));
                 });
                 ui.label(RichText::new(widgets::fmt_gain(tr.volume)).small().monospace());
-                knob(ui, &mut tr.pan, -1.0, 1.0, 0.0, "Pan", false, &widgets::fmt_pan);
+                knob(ui, &mut tr.pan, -1.0, 1.0, 0.0, "Pan", false, &widgets::fmt_pan)
+                    .context_menu(|ui| crate::ui::playlist::automation_menu_item(ui, format!("mixer.{t}.pan"), &mut auto_req));
                 ui.horizontal(|ui| {
                     ui.add_space(10.0);
                     small_toggle(ui, &mut tr.muted, "M", Color32::from_rgb(230, 110, 100), "Stumm (Mute)");
@@ -105,6 +108,10 @@ fn strip(app: &mut TStudio, ui: &mut Ui, t: usize) {
         })
         .response;
     ui.data_mut(|d| d.insert_temp(bg_id, resp.rect));
+    if let Some(path) = auto_req {
+        crate::ui::playlist::create_automation(app, &path);
+        return;
+    }
     let Some(resp) = bg_resp else { return };
     if resp.clicked() {
         app.mixer_ui.selected = t;
@@ -231,6 +238,7 @@ fn fx_chain(app: &mut TStudio, ui: &mut Ui, t: usize) {
     ui.separator();
     let mut remove = None;
     let mut swap = None;
+    let mut auto_req: Option<String> = None;
     egui::ScrollArea::vertical().auto_shrink([false; 2]).id_salt("fx_scroll").show(ui, |ui| {
         let n = tr.fx.len();
         for i in 0..n {
@@ -249,6 +257,17 @@ fn fx_chain(app: &mut TStudio, ui: &mut Ui, t: usize) {
                         if i > 0 && ui.small_button("▲").clicked() {
                             swap = Some((i, i - 1));
                         }
+                        ui.menu_button("〰", |ui| {
+                            ui.label(RichText::new("Automation erstellen:").small());
+                            for f in slot.params.field_names() {
+                                if ui.button(*f).clicked() {
+                                    auto_req = Some(format!("mixer.{t}.fx.{i}.{f}"));
+                                    ui.close_menu();
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text("Automation für einen Parameter dieses Effekts anlegen");
                     });
                 });
                 ui.add_enabled_ui(slot.enabled, |ui| fx_params(ui, &mut slot.params, &names));
@@ -273,6 +292,9 @@ fn fx_chain(app: &mut TStudio, ui: &mut Ui, t: usize) {
     }
     if let Some((a, b)) = swap {
         tr.fx.swap(a, b);
+    }
+    if let Some(path) = auto_req {
+        crate::ui::playlist::create_automation(app, &path);
     }
 }
 

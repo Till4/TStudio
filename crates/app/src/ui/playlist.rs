@@ -11,17 +11,22 @@ mod menus;
 mod automation;
 mod properties;
 mod tempo;
+mod auto_edit;
 
 use menus::*;
 use automation::*;
+pub use automation::{automation_menu_item, create_automation};
 use properties::*;
 use tempo::*;
+use auto_edit::*;
 
 enum PDrag {
     Move { anchor_tick: f64, anchor_track: i64, orig: Vec<(Id, i64, usize)> },
     ResizeR { anchor_tick: f64, orig: Vec<(Id, i64)> },
     ResizeL { anchor_tick: f64, orig: Vec<(Id, i64, i64, i64)> },
     Loop { from: i64 },
+    /// a point of the selected automation clip's curve
+    AutoPoint { clip: Id, idx: usize },
 }
 
 pub struct PlaylistState {
@@ -216,7 +221,13 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
             }
         }
     }
-    if pressed && grid_top {
+    // selected automation clip: click into its curve = add/grab a point (Alt = no grid snap)
+    let auto_snap = if mods.alt { 1 } else { snap_t };
+    let auto_grab = if pressed && grid_top && app.playlist_ui.drag.is_none() { pointer.and_then(|pt| auto_edit_press(app, pt, &clip_rect, &tick_of, auto_snap)) } else { None };
+    if let Some((clip, idx)) = auto_grab {
+        app.playlist_ui.drag = Some(PDrag::AutoPoint { clip, idx });
+    }
+    if pressed && grid_top && auto_grab.is_none() {
         if let Some(pt) = pointer {
             let t = tick_of(pt.x);
             let tr = track_of(pt.y).max(0);
@@ -265,6 +276,10 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
     if down {
         if let Some(pt) = pointer {
             let t = tick_of(pt.x);
+            if let Some(PDrag::AutoPoint { clip, idx }) = app.playlist_ui.drag.as_ref() {
+                let (clip, idx) = (*clip, *idx);
+                auto_edit_drag(app, clip, idx, pt, &clip_rect, &tick_of, auto_snap);
+            }
             let st = &mut app.playlist_ui;
             match st.drag.as_ref() {
                 Some(PDrag::Move { anchor_tick, anchor_track, orig }) => {
@@ -312,7 +327,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
                     let (a, b) = if to >= *from { (*from, to) } else { (to, *from) };
                     app.project.playlist.loop_region = if b > a { Some((a, b)) } else { None };
                 }
-                None => {}
+                Some(PDrag::AutoPoint { .. }) | None => {}
             }
         }
     }
@@ -334,7 +349,12 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
     }
     if sec_down && grid_top && app.playlist_ui.drag.is_none() {
         if let Some(pt) = pointer {
-            if let Some((id, _)) = hit(&app.project, pt) {
+            // right click on a curve point of the selected automation clip deletes the point
+            if let Some((clip, i)) = auto_point_at(app, pt, &clip_rect) {
+                if sec_pressed {
+                    auto_edit_delete(app, clip, i);
+                }
+            } else if let Some((id, _)) = hit(&app.project, pt) {
                 app.project.playlist.clips.retain(|c| c.id != id);
                 app.playlist_ui.selected.remove(&id);
             }
@@ -681,6 +701,13 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
                 let range = field_range(Project::auto_field_name(&a.target));
                 let pts = curve_points(&a.points, c.len, range, |t| x_of((c.start + t) as f64), body);
                 gp.with_clip_rect(body.intersect(grid)).add(egui::Shape::line(pts, Stroke::new(1.5, col.gamma_multiply(alpha))));
+                if sel && app.playlist_ui.selected.len() == 1 {
+                    let active = match &app.playlist_ui.drag {
+                        Some(PDrag::AutoPoint { clip, idx }) if *clip == c.id => Some(*idx),
+                        _ => None,
+                    };
+                    paint_auto_handles(&gp.with_clip_rect(r.intersect(grid)), a, c.len, r, active, pointer);
+                }
             }
         }
         gp.rect_stroke(r, 3.0, Stroke::new(if sel { 2.0 } else { 1.0 }, if sel { Color32::WHITE } else { Color32::from_black_alpha(120) }));

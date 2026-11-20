@@ -35,7 +35,7 @@ Dateien sind bewusst klein gehalten (Richtwert: < 600 Zeilen, danach in `<name>/
   `app/project_io.rs` (Neu/Öffnen/Speichern/Undo, Kanäle & Clips hinzufügen), `app/chrome.rs` (Shortcuts, Menü, Transportleiste, Statusleiste)
 - `live.rs` – Fenster-Steuerung durch `tstudio-cli live`
 - `ui/` – ein Modul pro Ansicht:
-  `playlist.rs` (+ `playlist/menus|automation|properties|tempo.rs`), `cutter.rs` (+ `cutter/stems|panels|tests.rs`),
+  `playlist.rs` (+ `playlist/menus|automation|auto_edit|properties|tempo.rs`), `cutter.rs` (+ `cutter/stems|panels|tests.rs`),
   `tsynth.rs` (+ `tsynth/helpers|pages|layout_tests.rs`), `piano_roll.rs`, `mixer.rs`, `rack.rs`, `instrument.rs`,
   `library.rs`, `export.rs`, `fetch.rs`, `record.rs`, `settings.rs`, `widgets.rs` (gemeinsame Widgets/Farben)
 
