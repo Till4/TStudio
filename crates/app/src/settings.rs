@@ -88,8 +88,17 @@ impl Paths {
     pub fn analysis_cache(&self) -> PathBuf {
         self.config_dir.join("analysis-cache.json")
     }
+    /// Legacy single autosave file of older versions (still offered for restore).
     pub fn autosave(&self) -> PathBuf {
         self.config_dir.join("autosave.tsp")
+    }
+    /// Rotating backups of unsaved work.
+    pub fn backups_dir(&self) -> PathBuf {
+        self.config_dir.join("backups")
+    }
+    /// Exists while TStudio runs (left behind after a crash).
+    pub fn session_lock(&self) -> PathBuf {
+        self.config_dir.join("session.lock")
     }
     pub fn presets_dir(&self) -> PathBuf {
         self.config_dir.join("presets")

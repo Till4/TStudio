@@ -277,18 +277,9 @@ impl TStudio {
                     ui.close_menu();
                     self.export.open = true;
                 }
-                if ui.button("Autosave wiederherstellen").clicked() {
+                if ui.button("Backups wiederherstellen…").clicked() {
                     ui.close_menu();
-                    let p = self.paths.autosave();
-                    if p.exists() && self.confirm_discard() {
-                        match Project::load(&p) {
-                            Ok(proj) => {
-                                self.load_project(proj, None);
-                                self.set_status("Autosave wiederhergestellt");
-                            }
-                            Err(e) => self.set_error(e),
-                        }
-                    }
+                    self.backups.show_window = true;
                 }
                 ui.separator();
                 if ui.button("Einstellungen…").clicked() {

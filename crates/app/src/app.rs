@@ -19,6 +19,7 @@ use tstudio_project::{AudioClip, ClipKind, History, Id, Instrument, Note, Projec
 mod playback;
 mod project_io;
 mod chrome;
+mod recovery;
 mod templates;
 
 
@@ -93,6 +94,8 @@ pub struct TStudio {
     live: Option<LiveServer>,
     /// name typed in the "Als Vorlage speichern" dialog (Some = dialog open)
     template_dialog: Option<String>,
+    /// auto-backup of unsaved work / restore offer after a crash
+    pub backups: recovery::BackupState,
 }
 
 impl TStudio {
@@ -157,8 +160,10 @@ impl TStudio {
             last_disk_check: Instant::now(),
             live,
             template_dialog: None,
+            backups: Default::default(),
             settings,
         };
+        app.init_backups();
         if let Some(p) = open {
             app.open_path(&p);
         }
@@ -303,16 +308,6 @@ impl TStudio {
         self.project != self.saved
     }
 
-    fn autosave(&mut self) {
-        if self.last_autosave.elapsed() > Duration::from_secs(120) {
-            self.last_autosave = Instant::now();
-            if self.is_dirty() {
-                let _ = self.project.save(&self.paths.autosave());
-            }
-            self.library.save_cache();
-        }
-    }
-
     fn update_title(&mut self, ctx: &egui::Context) {
         let t = format!("TStudio — {}{}", self.project.name, if self.is_dirty() { " •" } else { "" });
         if t != self.last_title {
@@ -338,6 +333,7 @@ impl TStudio {
                 }
                 self.library.save_cache();
                 self.settings.save(&self.paths.settings());
+                self.end_backup_session();
             }
         }
     }
@@ -379,6 +375,7 @@ impl eframe::App for TStudio {
         ui::export::window(self, ctx);
         ui::record::window(self, ctx);
         self.template_window(ctx);
+        self.backup_window(ctx);
         widgets::draw_drag_ghost(ctx);
         if !ctx.input(|i| i.pointer.any_down()) {
             egui::DragAndDrop::clear_payload(ctx);
@@ -395,7 +392,7 @@ impl eframe::App for TStudio {
         if !ctx.input(|i| i.pointer.any_down()) && !ctx.wants_keyboard_input() {
             self.history.commit(&self.project);
         }
-        self.autosave();
+        self.auto_backup();
         self.check_external_change(ctx);
         self.live_sync(ctx);
         self.update_title(ctx);
