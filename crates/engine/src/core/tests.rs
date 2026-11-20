@@ -2,9 +2,9 @@ use super::*;
 use crate::snapshot::{ChannelSnap, FxSnap, NoteSnap, PatternSnap, TrackSnap};
 use tstudio_dsp::sampler::SamplerParams;
 
-const IMPULSE: usize = 100;
+pub(super) const IMPULSE: usize = 100;
 
-fn click_sample(sr: u32) -> Arc<SampleData> {
+pub(super) fn click_sample(sr: u32) -> Arc<SampleData> {
     // impulse after the 0.5 ms minimum attack ramp
     let mut v = vec![0.0f32; 2000];
     v[IMPULSE] = 1.0;
@@ -12,7 +12,7 @@ fn click_sample(sr: u32) -> Arc<SampleData> {
     Arc::new(SampleData::new(v.clone(), v, sr))
 }
 
-fn snapshot_with_notes(starts: &[i64], sr: u32) -> Snapshot {
+pub(super) fn snapshot_with_notes(starts: &[i64], sr: u32) -> Snapshot {
     let mut s = Snapshot::empty();
     s.bpm = 120.0;
     s.channels.push(ChannelSnap {
@@ -89,6 +89,8 @@ fn dc_clip(track: usize, level: f32) -> ClipSnap {
         mixer_track: track,
         fade_in: 0,
         fade_out: 0,
+        fit_bpm: 120.0,
+        follow: false,
     }
 }
 
@@ -200,6 +202,8 @@ fn stretched_audio_clip_loops_sample() {
         mixer_track: 1,
         fade_in: 0,
         fade_out: 0,
+        fit_bpm: 120.0,
+        follow: false,
     });
     let out = run_song(s, 96000);
     for k in 0..8 {
@@ -280,7 +284,7 @@ fn autotune_latency_is_compensated() {
         let mut s = song(2);
         let mut v = vec![0.0f32; 4000];
         v[0] = 1.0;
-        s.clips.push(ClipSnap::Audio { sample: Arc::new(SampleData::new(v.clone(), v, 48000)), start: PPQ, len: PPQ, offset: 0, gain: 1.0, mixer_track: 1, fade_in: 0, fade_out: 0 });
+        s.clips.push(ClipSnap::Audio { sample: Arc::new(SampleData::new(v.clone(), v, 48000)), start: PPQ, len: PPQ, offset: 0, gain: 1.0, mixer_track: 1, fade_in: 0, fade_out: 0, fit_bpm: 120.0, follow: false });
         if with_fx {
             s.mixer[1].fx.push(FxSnap { enabled: true, params: EffectParams::Autotune(AutotuneParams { mix: 0.0, ..Default::default() }) });
         }

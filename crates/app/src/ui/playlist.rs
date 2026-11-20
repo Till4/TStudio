@@ -10,10 +10,12 @@ use tstudio_project::{AutoPoint, AutomationClip, ClipKind, Id, Project, PPQ};
 mod menus;
 mod automation;
 mod properties;
+mod tempo;
 
 use menus::*;
 use automation::*;
 use properties::*;
+use tempo::*;
 
 enum PDrag {
     Move { anchor_tick: f64, anchor_track: i64, orig: Vec<(Id, i64, usize)> },
@@ -132,8 +134,10 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
     let head_w = 130.0;
     let ruler_h = 22.0;
     let ruler = Rect::from_min_max(pos2(full.left() + head_w, full.top()), pos2(full.right(), full.top() + ruler_h));
-    let heads = Rect::from_min_max(pos2(full.left(), full.top() + ruler_h), pos2(full.left() + head_w, full.bottom()));
-    let grid = Rect::from_min_max(pos2(full.left() + head_w, full.top() + ruler_h), full.max);
+    // tempo track under the ruler
+    let lane = Rect::from_min_max(pos2(full.left() + head_w, ruler.bottom()), pos2(full.right(), ruler.bottom() + TEMPO_LANE_H));
+    let heads = Rect::from_min_max(pos2(full.left(), lane.bottom()), pos2(full.left() + head_w, full.bottom()));
+    let grid = Rect::from_min_max(pos2(full.left() + head_w, lane.bottom()), full.max);
 
     let n_tracks = app.project.playlist.tracks.len();
     {
@@ -547,9 +551,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
         gp.rect_filled(Rect::from_min_max(pos2(x_of(a as f64), grid.top()), pos2(x_of(b as f64), grid.bottom())), 0.0, ACCENT.gamma_multiply(0.06));
     }
 
-    let bpm = app.project.bpm;
     let sr = app.engine.sample_rate as f64;
-    let spt = sr * 60.0 / (bpm * PPQ as f64);
     let clips = app.project.playlist.clips.clone();
     for c in &clips {
         let r = clip_rect(c);
@@ -624,6 +626,9 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
                 };
                 gp.with_clip_rect(r.intersect(grid)).text(head.left_center() + vec2(4.0, 0.0), Align2::LEFT_CENTER, format!("{name}{tag}"), FontId::proportional(10.5), Color32::BLACK);
                 let body = Rect::from_min_max(pos2(r.left(), head.bottom()), r.max);
+                // fitted to the tempo at the clip start, like the engine does
+                let bpm = app.project.bpm_at(c.start);
+                let spt = sr * 60.0 / (bpm * PPQ as f64);
                 if let Some(l) = app.cache.get_prepared(&a.path, &a.stretch, bpm) {
                     // the sample loops when the clip is longer: draw it segment by segment
                     let slen = l.data.len().max(1) as f64;
@@ -729,6 +734,9 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
         rp.rect_filled(tag, 2.0, MARKER);
         rp.galley(pos2(tag.left() + 4.0, tag.center().y - galley.size().y / 2.0), galley, Color32::BLACK);
     }
+
+    tempo_lane(app, ui, &painter, lane, x_of, tick_of, snap_t, t1);
+    painter.text(pos2(full.left() + 8.0, lane.center().y), Align2::LEFT_CENTER, "Tempo", FontId::proportional(10.5), TEXT_DIM);
 
     // headers
     let hp = painter.with_clip_rect(heads);

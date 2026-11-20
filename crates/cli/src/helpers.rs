@@ -153,6 +153,8 @@ pub(crate) fn info(p: &Project) -> Value {
         "name": p.name,
         "bpm": p.bpm,
         "beats_per_bar": p.beats_per_bar,
+        "tempo_changes": p.tempo.len(),
+        "song_length_s": (p.tick_to_time(p.song_length() as f64) * 1000.0).round() / 1000.0,
         "swing": p.swing,
         "master_volume": p.mixer[0].volume,
         "song_length_bars": p.song_length() as f64 / bar as f64,

@@ -6,12 +6,15 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use tstudio_dsp::fx::{Effect, FxContext};
 use tstudio_dsp::{pan_gains, SampleData};
+use tstudio_project::tempo::samples_per_tick;
 use tstudio_project::{AutoTarget, PPQ};
 
 mod shared;
 mod sequencer;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tempo_tests;
 
 pub use shared::*;
 pub use sequencer::*;
@@ -263,6 +266,11 @@ impl EngineCore {
             }
         }
         self.events.sort_unstable_by_key(|e| e.frame);
+        // current tempo (tempo track in song mode) for synced LFOs / delays
+        let bpm = match self.mode {
+            PlayMode::Song => snap.tempo.bpm_at(self.pos) as f32,
+            PlayMode::Pattern(_) => snap.bpm as f32,
+        };
 
         // ---- instruments, split at event frames for sample accuracy
         let mut cur = 0usize;
@@ -270,7 +278,7 @@ impl EngineCore {
             let ev = self.events[i];
             let f = ev.frame.min(n);
             if f > cur {
-                render_channels(snap, &mut self.rack, &auto, cur, f);
+                render_channels(snap, &mut self.rack, &auto, bpm, cur, f);
                 cur = f;
             }
             match ev.kind {
@@ -278,7 +286,7 @@ impl EngineCore {
                 EvKind::On | EvKind::Off => apply_event(snap, &mut self.rack, &ev),
             }
         }
-        render_channels(snap, &mut self.rack, &auto, cur, n);
+        render_channels(snap, &mut self.rack, &auto, bpm, cur, n);
 
         // ---- live input (monitoring through a mixer insert)
         if let Some(m) = &mut self.monitor {
@@ -315,7 +323,6 @@ impl EngineCore {
         }
 
         // ---- sidechain keys: pre-fx level of the source track
-        let bpm = snap.bpm as f32;
         let any_solo = snap.mixer.iter().skip(1).any(|t| t.solo);
         let Rack { tracks, keys, .. } = &mut *self.rack;
         let n_tracks = tracks.len().min(snap.mixer.len());

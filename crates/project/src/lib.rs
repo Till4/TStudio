@@ -10,8 +10,10 @@ use tstudio_dsp::synth::SynthParams;
 
 pub mod automation;
 pub mod history;
+pub mod tempo;
 pub mod tracks;
 pub use automation::{AutoPoint, AutoTarget, AutomationClip};
+pub use tempo::{TempoMap, TempoPoint};
 pub use history::History;
 
 /// Ticks per quarter note.
@@ -39,6 +41,8 @@ pub struct Project {
     /// index 0 = master
     pub mixer: Vec<MixerTrack>,
     pub next_id: Id,
+    /// tempo changes after tick 0 (`bpm` is the start tempo), sorted by tick
+    pub tempo: Vec<TempoPoint>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -389,6 +393,7 @@ impl Default for Project {
             playlist: Playlist::default(),
             mixer,
             next_id: 1,
+            tempo: Vec::new(),
         }
     }
 }
@@ -595,6 +600,7 @@ impl Project {
         if self.bpm <= 0.0 {
             self.bpm = 120.0;
         }
+        self.sort_tempo();
         let max_id = self
             .channels
             .iter()

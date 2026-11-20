@@ -74,7 +74,10 @@ pub fn compile_project(p: &Project, samples: &mut SampleSource<'_>, for_export: 
                 }
             }
             ClipKind::Audio(a) => {
-                if let Some(data) = samples(&a.path, &a.stretch, p.bpm) {
+                // fitted to the tempo at the clip start (= project tempo without a tempo track)
+                let fit_bpm = p.bpm_at(c.start);
+                let follow = a.stretch.is_active() && a.stretch.source_bpm > 0.0 && a.stretch.target_bpm.is_none();
+                if let Some(data) = samples(&a.path, &a.stretch, fit_bpm) {
                     clips.push(ClipSnap::Audio {
                         sample: data,
                         start: c.start,
@@ -84,6 +87,8 @@ pub fn compile_project(p: &Project, samples: &mut SampleSource<'_>, for_export: 
                         mixer_track: a.mixer_track,
                         fade_in: a.fade_in,
                         fade_out: a.fade_out,
+                        fit_bpm,
+                        follow,
                     });
                 }
             }
@@ -128,6 +133,7 @@ pub fn compile_project(p: &Project, samples: &mut SampleSource<'_>, for_export: 
 
     Snapshot {
         bpm: p.bpm,
+        tempo: p.tempo_map(),
         beats_per_bar: p.beats_per_bar,
         channels,
         patterns,

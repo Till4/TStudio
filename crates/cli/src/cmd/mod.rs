@@ -12,6 +12,7 @@ mod track;
 mod auto;
 mod marker;
 mod section;
+mod tempo;
 
 pub(crate) use channel::*;
 pub(crate) use pattern::*;
@@ -23,6 +24,7 @@ pub(crate) use track::*;
 pub(crate) use auto::*;
 pub(crate) use marker::*;
 pub(crate) use section::*;
+pub(crate) use tempo::*;
 
 pub(crate) fn run(cmd: Cmd) -> R<Value> {
     match cmd {
@@ -300,6 +302,7 @@ pub(crate) fn run(cmd: Cmd) -> R<Value> {
         }
         Cmd::Marker(c) => marker_cmd(c),
         Cmd::Section(c) => section_cmd(c),
+        Cmd::Tempo(c) => tempo_cmd(c),
         Cmd::Stretch { input, output, from, to, mode, pitch, formant } => {
             let d = audio::load(&input)?;
             let m = stretch_mode(&mode)?;

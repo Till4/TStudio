@@ -2,6 +2,9 @@
 
 use crate::*;
 
+mod timeline;
+pub(crate) use timeline::*;
+
 #[derive(Parser)]
 #[command(
     name = "tstudio-cli",
@@ -180,6 +183,9 @@ pub(crate) enum Cmd {
     /// Song-Abschnitte: Takte kopieren, leeren, einfügen, löschen (Takt oder Markername)
     #[command(subcommand)]
     Section(SectionCmd),
+    /// Tempo-Spur: Tempowechsel ab einem Takt (springend oder als Rampe)
+    #[command(subcommand)]
+    Tempo(TempoCmd),
     /// Tempo einer Datei ändern (Stretch = Tonhöhe bleibt, Resample = wie Platte)
     Stretch {
         input: PathBuf,

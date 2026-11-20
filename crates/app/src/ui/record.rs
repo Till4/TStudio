@@ -174,7 +174,8 @@ pub fn finish_take(app: &mut TStudio) {
         app.set_status("Aufnahme zu kurz – verworfen");
         return;
     }
-    let tps = app.project.bpm / 60.0 * PPQ as f64; // ticks per second
+    // ticks per second at the position where playback started (tempo track)
+    let tps = app.project.bpm_at(ref_pos as i64) / 60.0 * PPQ as f64;
     let extra = app.settings.record_offset_ms as f64 / 1000.0;
     let first_ns = take.first_frame_ns().unwrap_or(ref_ns as i128);
     let (skip, start) = place_take(ref_ns, ref_pos, first_ns, tps, sr, extra);
@@ -196,7 +197,13 @@ pub fn finish_take(app: &mut TStudio) {
         return;
     }
     let start = start.round().max(0.0) as i64;
-    let len = ((data.left.len() as f64 / sr) * tps).round().max(1.0) as i64;
+    let len = if app.project.tempo.is_empty() {
+        ((data.left.len() as f64 / sr) * tps).round().max(1.0) as i64
+    } else {
+        // the take plays in real time: its end follows the tempo track
+        let t0 = app.project.tick_to_time(start as f64);
+        (app.project.time_to_tick(t0 + data.left.len() as f64 / sr) - start as f64).round().max(1.0) as i64
+    };
     let insert = vocal_insert(app);
     let track = vocal_track(app, start, start + len);
     app.project.add_clip(track, start, len, ClipKind::Audio(AudioClip { path: path.clone(), mixer_track: insert, ..Default::default() }));

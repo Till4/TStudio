@@ -22,9 +22,12 @@ Dateien sind bewusst klein gehalten (Richtwert: < 600 Zeilen, danach in `<name>/
 - `fx/` – `params.rs` (EffectKind/-Params), `processors.rs` (Effect-DSP), `tests.rs`; weitere Effekte in `fx_extra.rs`
 - `synth_presets.rs` (Presets), `filter.rs`, `osc.rs`, `wavetable.rs`, `stretch.rs`, `meter.rs`, `isolate.rs`, `autotune.rs`
 
+**project**
+- `lib.rs` (Project, Kanäle, Clips), `automation.rs`, `tracks.rs`, `history.rs`, `tempo.rs` (Tempo-Spur: TempoPoint, TempoMap tick↔Sekunden)
+
 **engine**
 - `core.rs` – `EngineCore` (process/process_chunk); `core/shared.rs` (Command, SharedState, PlayMode),
-  `core/sequencer.rs` (Events, Clips, Swing, Latenz), `core/tests.rs`
+  `core/sequencer.rs` (Events, Clips, Swing, Latenz, Tempo-Map), `core/tests.rs`, `core/tempo_tests.rs`
 - `snapshot.rs`, `compile.rs` (Projekt → Snapshot), `audio.rs` (cpal), `render.rs` (Offline), `soundfont.rs`, `input.rs`
 
 **app** (`crates/app/src`)
@@ -32,13 +35,13 @@ Dateien sind bewusst klein gehalten (Richtwert: < 600 Zeilen, danach in `<name>/
   `app/project_io.rs` (Neu/Öffnen/Speichern/Undo, Kanäle & Clips hinzufügen), `app/chrome.rs` (Shortcuts, Menü, Transportleiste, Statusleiste)
 - `live.rs` – Fenster-Steuerung durch `tstudio-cli live`
 - `ui/` – ein Modul pro Ansicht:
-  `playlist.rs` (+ `playlist/menus|automation|properties.rs`), `cutter.rs` (+ `cutter/stems|panels|tests.rs`),
+  `playlist.rs` (+ `playlist/menus|automation|properties|tempo.rs`), `cutter.rs` (+ `cutter/stems|panels|tests.rs`),
   `tsynth.rs` (+ `tsynth/helpers|pages|layout_tests.rs`), `piano_roll.rs`, `mixer.rs`, `rack.rs`, `instrument.rs`,
   `library.rs`, `export.rs`, `fetch.rs`, `record.rs`, `settings.rs`, `widgets.rs` (gemeinsame Widgets/Farben)
 
 **cli** (`crates/cli/src`)
-- `main.rs` (Einstieg, JSON-Ausgabe), `args.rs` (alle clap-Definitionen), `helpers.rs` (Laden/Speichern, Selektoren, JSON-Pfade, `info`)
-- `cmd/mod.rs` – `run`-Dispatch; pro Bereich `cmd/channel|pattern|notes|clip|fx|mixer|track|auto|marker|section.rs`
+- `main.rs` (Einstieg, JSON-Ausgabe), `args.rs` (alle clap-Definitionen; `args/timeline.rs`: tempo/meter), `helpers.rs` (Laden/Speichern, Selektoren, JSON-Pfade, `info`)
+- `cmd/mod.rs` – `run`-Dispatch; pro Bereich `cmd/channel|pattern|notes|clip|fx|mixer|track|auto|marker|section|tempo.rs`
 - `audio.rs` (Analyse/Render), `tools.rs` (Akkorde, Sections, Hilfen), `spec.rs`, `live.rs`
 
 ## Konventionen beim Splitten

@@ -238,6 +238,14 @@ pub fn shift_after(p: &mut Project, at: i64, delta: i64) {
             m.tick += delta;
         }
     }
+    // tempo changes move with the music; those inside a removed range go away
+    p.tempo.retain(|t| delta >= 0 || t.tick < at + delta || t.tick >= at);
+    for t in p.tempo.iter_mut() {
+        if t.tick >= at {
+            t.tick += delta;
+        }
+    }
+    p.sort_tempo();
     if let Some((a, b)) = p.playlist.loop_region.as_mut() {
         if *a >= at {
             *a += delta;

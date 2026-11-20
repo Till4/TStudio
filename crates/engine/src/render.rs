@@ -17,7 +17,10 @@ pub fn render_offline(snap: Arc<Snapshot>, sr: u32, mode: PlayMode, tail_secs: f
         PlayMode::Pattern(i) => snap.patterns.get(i).map(|p| p.length).unwrap_or(bar),
     } as f64;
     let spt = sr as f64 * 60.0 / (snap.bpm * PPQ as f64);
-    let main_frames = (length_ticks * spt).ceil() as usize;
+    let main_frames = match mode {
+        PlayMode::Song if !snap.tempo.is_constant() => (snap.tempo.secs_at(length_ticks) * sr as f64).ceil() as usize,
+        _ => (length_ticks * spt).ceil() as usize,
+    };
     let total = main_frames + (tail_secs * sr as f64) as usize;
 
     let mut core = EngineCore::new(sr as f32, snap, rack, shared);
