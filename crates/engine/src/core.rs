@@ -10,15 +10,19 @@ use tstudio_dsp::{pan_gains, SampleData};
 use tstudio_project::tempo::samples_per_tick;
 use tstudio_project::{AutoTarget, PPQ};
 
+mod count_in;
 mod shared;
 mod sequencer;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tempo_tests;
+#[cfg(test)]
+mod count_in_tests;
 
 pub use shared::*;
 pub use sequencer::*;
+use count_in::CountIn;
 
 /// Automation lanes evaluated per chunk (further lanes are ignored).
 pub const MAX_AUTO: usize = 64;
@@ -79,6 +83,9 @@ pub struct EngineCore {
     monitor: Option<Box<MonitorIn>>,
     monitor_track: Option<usize>,
     spectra: SpectrumTaps,
+    count_in: Option<CountIn>,
+    /// (frame offset in the last `process` call, position) where a count-in handed over to playback
+    started_at: Option<(usize, f64)>,
 }
 
 impl EngineCore {
@@ -104,7 +111,33 @@ impl EngineCore {
             monitor: None,
             monitor_track: None,
             spectra: SpectrumTaps::new(sr),
+            count_in: None,
+            started_at: None,
         }
+    }
+
+    /// Where the transport started during the last `process` call after a count-in:
+    /// (frame offset in that call, start position in ticks). Cleared by reading.
+    pub fn take_started_at(&mut self) -> Option<(usize, f64)> {
+        self.started_at.take()
+    }
+
+    pub fn is_counting_in(&self) -> bool {
+        self.count_in.is_some()
+    }
+
+    /// Count-in of `bars` bars in the meter and tempo at the current position (song mode follows
+    /// the time-signature and tempo tracks; pattern mode uses the project meter and start tempo).
+    fn count_in_for(&self, bars: u32) -> CountIn {
+        let (beats, beat_ticks, bpm) = match self.mode {
+            PlayMode::Song => {
+                let m = self.snap.bars.meter_at(self.pos);
+                (m.beats, m.beat_ticks, self.snap.tempo.bpm_at(self.pos))
+            }
+            PlayMode::Pattern(_) => (self.snap.beats_per_bar.max(1), PPQ, self.snap.bpm),
+        };
+        let beat_frames = beat_ticks as f64 * samples_per_tick(self.sr as f64, bpm.max(1.0));
+        CountIn::new(bars * beats.max(1), beat_frames, beats)
     }
 
     pub fn sample_rate(&self) -> f32 {
@@ -145,13 +178,24 @@ impl EngineCore {
                 gc(Garbage::Snapshot(old));
             }
             Command::Play => {
+                self.count_in = None;
                 self.playing = true;
             }
+            Command::PlayCountIn(bars) => {
+                if bars == 0 {
+                    self.count_in = None;
+                    self.playing = true;
+                } else if !self.playing {
+                    self.count_in = Some(self.count_in_for(bars));
+                }
+            }
             Command::Pause => {
+                self.count_in = None;
                 self.playing = false;
                 self.release_all();
             }
             Command::Stop => {
+                self.count_in = None;
                 self.playing = false;
                 self.pos = self.start_position();
                 self.release_all();
@@ -213,12 +257,22 @@ impl EngineCore {
         let total = out_l.len().min(out_r.len());
         let mut off = 0;
         while off < total {
-            let n = (total - off).min(MAX_CHUNK);
+            let mut n = (total - off).min(MAX_CHUNK);
+            // a count-in ends on a chunk boundary, so the song starts sample-accurately
+            if let Some(ci) = &self.count_in {
+                n = n.min(ci.remaining().max(1));
+            }
             self.process_chunk(&mut out_l[off..off + n], &mut out_r[off..off + n]);
             off += n;
+            if self.count_in.as_ref().map(|c| c.remaining() == 0).unwrap_or(false) {
+                self.count_in = None;
+                self.playing = true;
+                self.started_at = Some((off, self.pos));
+            }
         }
         self.shared.position.store(self.pos.to_bits(), Ordering::Relaxed);
         self.shared.playing.store(self.playing, Ordering::Relaxed);
+        self.shared.counting_in.store(self.count_in.is_some(), Ordering::Relaxed);
     }
 
     fn process_chunk(&mut self, out_l: &mut [f32], out_r: &mut [f32]) {
@@ -268,6 +322,9 @@ impl EngineCore {
                     c.release_all();
                 }
             }
+        } else if let Some(ci) = self.count_in.as_mut() {
+            let events = &mut self.events;
+            ci.advance(n, |f, down| push_event(events, Event { frame: f, channel: 0, key: 0, vel: 0.0, gain: 1.0, dur: None, kind: EvKind::Click(down) }));
         }
         self.events.sort_unstable_by_key(|e| e.frame);
         // current tempo (tempo track in song mode) for synced LFOs / delays

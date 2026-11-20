@@ -15,6 +15,7 @@ pub mod meter;
 pub mod midi;
 pub mod templates;
 pub mod tempo;
+pub mod takes;
 pub mod tracks;
 pub use automation::{AutoPoint, AutoTarget, AutomationClip};
 pub use change::{describe_change, Change};
@@ -265,11 +266,13 @@ pub struct PlaylistTrack {
     pub solo: bool,
     /// linear gain for everything on this track (audio clips and pattern notes)
     pub volume: f32,
+    /// Recording lanes: tracks with the same id are the takes of one take group (see `takes.rs`).
+    pub take_group: Option<Id>,
 }
 
 impl Default for PlaylistTrack {
     fn default() -> Self {
-        Self { name: String::new(), muted: false, solo: false, volume: 1.0 }
+        Self { name: String::new(), muted: false, solo: false, volume: 1.0, take_group: None }
     }
 }
 
@@ -617,6 +620,7 @@ impl Project {
             .map(|c| c.id)
             .chain(self.patterns.iter().map(|p| p.id))
             .chain(self.playlist.clips.iter().map(|c| c.id))
+            .chain(self.playlist.tracks.iter().filter_map(|t| t.take_group))
             .max()
             .unwrap_or(0);
         self.next_id = self.next_id.max(max_id + 1);

@@ -21,6 +21,12 @@ pub struct Settings {
     pub monitor_input: bool,
     /// manual timing correction for recordings
     pub record_offset_ms: f32,
+    /// metronome click while recording (even when the 🔔 is off)
+    pub record_click: bool,
+    /// count-in in bars before a recording started from a stopped transport (0 = none)
+    pub record_count_in: u32,
+    /// every take on its own lane of a take group (comping); off = first free Vocals track
+    pub record_take_lanes: bool,
     pub buffer_size: Option<u32>,
     pub midi_port: Option<String>,
     pub favorites: BTreeSet<PathBuf>,
@@ -52,6 +58,9 @@ impl Default for Settings {
             input_device: None,
             monitor_input: false,
             record_offset_ms: 0.0,
+            record_click: true,
+            record_count_in: 1,
+            record_take_lanes: true,
             buffer_size: None,
             midi_port: None,
             favorites: BTreeSet::new(),

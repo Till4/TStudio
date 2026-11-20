@@ -27,6 +27,8 @@ enum PDrag {
     Loop { from: i64 },
     /// a point of the selected automation clip's curve
     AutoPoint { clip: Id, idx: usize },
+    /// Alt+drag on a take lane: comp range (`to` follows the mouse)
+    Comp { lane: usize, from: i64, to: i64 },
 }
 
 pub struct PlaylistState {
@@ -221,6 +223,7 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
             }
         }
     }
+    let take_lane = |p: &Project, tr: i64| tr >= 0 && p.playlist.tracks.get(tr as usize).map(|t| t.take_group.is_some()).unwrap_or(false);
     // selected automation clip: click into its curve = add/grab a point (Alt = no grid snap)
     let auto_snap = if mods.alt { 1 } else { snap_t };
     let auto_grab = if pressed && grid_top && app.playlist_ui.drag.is_none() { pointer.and_then(|pt| auto_edit_press(app, pt, &clip_rect, &tick_of, auto_snap)) } else { None };
@@ -232,7 +235,10 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
             let t = tick_of(pt.x);
             let tr = track_of(pt.y).max(0);
             let st = &mut app.playlist_ui;
-            if let Some((id, side)) = hit(&app.project, pt) {
+            if mods.alt && take_lane(&app.project, track_of(pt.y)) {
+                let from = round_to(t as i64, snap_t).max(0);
+                st.drag = Some(PDrag::Comp { lane: tr as usize, from, to: from });
+            } else if let Some((id, side)) = hit(&app.project, pt) {
                 if !st.selected.contains(&id) {
                     if !mods.shift {
                         st.selected.clear();
@@ -327,11 +333,22 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
                     let (a, b) = if to >= *from { (*from, to) } else { (to, *from) };
                     app.project.playlist.loop_region = if b > a { Some((a, b)) } else { None };
                 }
+                Some(PDrag::Comp { lane, from, .. }) => {
+                    let (lane, from) = (*lane, *from);
+                    st.drag = Some(PDrag::Comp { lane, from, to: round_to(t as i64, snap_t).max(0) });
+                }
                 Some(PDrag::AutoPoint { .. }) | None => {}
             }
         }
     }
     if released {
+        if let Some(PDrag::Comp { lane, from, to }) = app.playlist_ui.drag.take() {
+            match app.project.comp_take(lane, from, to) {
+                Ok(n) if n > 0 => app.set_status(format!("Comping: {} aktiv in diesem Bereich", app.project.playlist.tracks[lane].name)),
+                Ok(_) => app.set_status("Comping: kein Take in diesem Bereich"),
+                Err(e) => app.set_error(e),
+            }
+        }
         app.playlist_ui.drag = None;
     }
     // right click on an empty spot: menu for a new pattern with an instrument
@@ -713,6 +730,15 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
         gp.rect_stroke(r, 3.0, Stroke::new(if sel { 2.0 } else { 1.0 }, if sel { Color32::WHITE } else { Color32::from_black_alpha(120) }));
     }
 
+    // comp range being dragged
+    if let Some(PDrag::Comp { lane, from, to }) = &app.playlist_ui.drag {
+        let (a, b) = ((*from).min(*to) as f64, (*from).max(*to) as f64);
+        let y = track_top(*lane);
+        let r = Rect::from_min_max(pos2(x_of(a), y + 1.0), pos2(x_of(b), y + th - 1.0));
+        gp.rect_filled(r, 2.0, ACCENT.gamma_multiply(0.25));
+        gp.rect_stroke(r, 2.0, Stroke::new(1.5_f32, ACCENT));
+    }
+
     // playhead
     if app.song_mode || app.is_playing() {
         let x = x_of(app.position());
@@ -808,6 +834,10 @@ pub fn show(app: &mut TStudio, ui: &mut Ui) {
         let max = (name_w / 6.5).max(3.0) as usize;
         let name: String = if tr.name.chars().count() > max { tr.name.chars().take(max.saturating_sub(1)).chain(std::iter::once('…')).collect() } else { tr.name.clone() };
         hp.text(pos2(r.left() + 24.0, r.center().y - 5.0), Align2::LEFT_CENTER, name, FontId::proportional(12.0), if audible { Color32::WHITE } else { TEXT_DIM });
+        if tr.take_group.is_some() {
+            // take lane: bracket on the left edge (Alt+drag = comp)
+            hp.line_segment([pos2(r.left() + 2.0, r.top() + 2.0), pos2(r.left() + 2.0, r.bottom() - 2.0)], Stroke::new(2.0_f32, ACCENT));
+        }
         let btn = |k: usize, label: &str, on: bool, col: Color32| {
             let b = head_btn(t, k);
             hp.rect_filled(b, 3.0, if on { col } else { BG_DARK });

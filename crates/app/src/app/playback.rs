@@ -124,9 +124,11 @@ impl TStudio {
             self.sent_mode = Some(m);
             self.send(Command::SetMode(m));
         }
-        if self.sent_metronome != Some(self.metronome) {
-            self.sent_metronome = Some(self.metronome);
-            self.send(Command::SetMetronome(self.metronome));
+        // recording can switch the click on for the duration of a take
+        let click = self.metronome || (self.rec.active && self.settings.record_click);
+        if self.sent_metronome != Some(click) {
+            self.sent_metronome = Some(click);
+            self.send(Command::SetMetronome(click));
         }
     }
 

@@ -14,6 +14,9 @@ pub enum Command {
     SetSnapshot(Arc<Snapshot>),
     SetRack(Box<Rack>, Arc<Snapshot>),
     Play,
+    /// Play after a count-in of N bars (0 = plain `Play`). Ignored while playing. The bars use
+    /// the meter and tempo at the start position (song mode: time-signature/tempo track).
+    PlayCountIn(u32),
     Pause,
     Stop,
     SetPosition(f64),
@@ -102,6 +105,8 @@ pub struct SharedState {
     pub(super) out_latency_ns: AtomicU64,
     /// per-track FFT spectra for the mixer (only watched tracks are analysed)
     pub spectrum: SpectrumShared,
+    /// a count-in is running (the transport starts afterwards)
+    pub(super) counting_in: AtomicBool,
 }
 
 impl SharedState {
@@ -117,6 +122,7 @@ impl SharedState {
             play_start: Stamp::new(),
             out_latency_ns: AtomicU64::new(0),
             spectrum: SpectrumShared::default(),
+            counting_in: AtomicBool::new(false),
         }
     }
 
@@ -136,6 +142,17 @@ impl SharedState {
             let ns = (self.epoch.elapsed() + latency).as_nanos() as u64;
             self.play_start.write(ns, pos);
         }
+    }
+
+    /// Playback started inside a block (after a count-in): `at` = when that frame reaches the
+    /// speakers, relative to the engine epoch.
+    pub fn note_start_at(&self, at: std::time::Duration, pos: f64) {
+        self.play_start.write(at.as_nanos() as u64, pos);
+    }
+
+    /// True while a count-in runs (the transport is not playing yet).
+    pub fn is_counting_in(&self) -> bool {
+        self.counting_in.load(Ordering::Relaxed)
     }
 
     /// Playhead in ticks.

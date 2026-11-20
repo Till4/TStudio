@@ -2,6 +2,10 @@
 //! plays and drops the take as an audio clip on a "Vocals" track, routed to the "Vocals" mixer
 //! insert (with Autotune). Takes are placed by the engine's playback clock, so the output and
 //! input latency of the sound card are compensated.
+//!
+//! Options: metronome click while recording, a count-in (1–2 bars) when recording starts from
+//! a stopped transport, and take lanes: takes of the same section stack as lanes of one take
+//! group, the newest one active. Alt+drag on a take lane comps (see `tstudio_project::takes`).
 
 use crate::app::TStudio;
 use crate::ui::widgets::{self, ACCENT, TEXT_DIM};
@@ -28,6 +32,14 @@ pub struct RecordState {
     reference: Option<(u64, f64)>,
     pub level: (f32, f32),
     pub last_take: Option<PathBuf>,
+    /// when the take was started (a count-in cancelled by Stop ends the take)
+    started_at: Option<std::time::Instant>,
+}
+
+/// Count-in in bars (clamped to 0..=2). The engine plays them in the meter and tempo at the
+/// start position (time-signature and tempo track).
+pub fn count_in_bars(bars: u32) -> u32 {
+    bars.min(2)
 }
 
 /// Opens the microphone (and the monitoring path) if it is not open yet.
@@ -99,6 +111,7 @@ pub fn toggle(app: &mut TStudio) {
     input.start_take();
     app.rec.active = true;
     app.rec.reference = None;
+    app.rec.started_at = Some(std::time::Instant::now());
     if app.is_playing() && app.song_mode {
         let shared = &app.engine.shared;
         let ns = shared.epoch.elapsed().as_nanos() as u64 + (shared.output_latency_ms() * 1e6) as u64;
@@ -111,8 +124,13 @@ pub fn toggle(app: &mut TStudio) {
         app.rec.old_stamp = app.engine.shared.play_start();
         app.song_mode = true;
         app.sync_mode();
-        app.send(Command::Play);
+        let bars = count_in_bars(app.settings.record_count_in);
+        app.send(Command::PlayCountIn(bars));
         app.rec.started_playback = true;
+        if bars > 0 {
+            app.set_status(format!("Einzählen ({bars} {}) … dann läuft die Aufnahme", if bars == 1 { "Takt" } else { "Takte" }));
+            return;
+        }
     }
     app.set_status("● Aufnahme läuft – 🎤 oder Stop beendet sie");
 }
@@ -130,6 +148,9 @@ pub fn poll(app: &mut TStudio, ctx: &egui::Context) {
             }
         }
         if !app.is_playing() && app.rec.reference.is_some() {
+            finish_take(app);
+        } else if app.rec.reference.is_none() && !app.is_playing() && !app.engine.shared.is_counting_in() && app.rec.started_at.map(|t| t.elapsed().as_millis() > 600).unwrap_or(false) {
+            // Stop during the count-in
             finish_take(app);
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(30));
@@ -205,8 +226,18 @@ pub fn finish_take(app: &mut TStudio) {
         (app.project.time_to_tick(t0 + data.left.len() as f64 / sr) - start as f64).round().max(1.0) as i64
     };
     let insert = vocal_insert(app);
-    let track = vocal_track(app, start, start + len);
+    let track = if app.settings.record_take_lanes {
+        // same section recorded again → next lane of that take group; the newest take plays
+        let group = app.project.take_group_at(start, start + len);
+        let (_, lane) = app.project.new_take_lane(group, VOCAL_INSERT);
+        lane
+    } else {
+        vocal_track(app, start, start + len)
+    };
     app.project.add_clip(track, start, len, ClipKind::Audio(AudioClip { path: path.clone(), mixer_track: insert, ..Default::default() }));
+    if app.settings.record_take_lanes {
+        let _ = app.project.comp_take(track, start, start + len);
+    }
     app.cache.get_raw(&path);
     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let lost = if take.dropped > 0 { format!(" ⚠ {} Frames verloren", take.dropped) } else { String::new() };
@@ -235,7 +266,13 @@ fn vocal_track(app: &mut TStudio, a: i64, b: i64) -> usize {
 /// 🎤 button + input meter for the transport bar.
 pub fn transport_button(app: &mut TStudio, ui: &mut Ui) {
     let col = if app.rec.active { Color32::from_rgb(240, 70, 60) } else if app.rec.input.is_some() { ACCENT } else { TEXT_DIM };
-    let txt = if app.rec.active { "🎤 ●" } else { "🎤" };
+    let txt = if app.rec.active && app.engine.shared.is_counting_in() {
+        "🎤 …"
+    } else if app.rec.active {
+        "🎤 ●"
+    } else {
+        "🎤"
+    };
     let resp = ui
         .add(egui::Button::new(RichText::new(txt).size(15.0).color(col)).min_size(egui::vec2(34.0, 26.0)))
         .on_hover_text("Vocals aufnehmen (Strg+Shift+R): spielt den Song ab der Playhead-Position und nimmt das Mikrofon auf.\nRechtsklick: Aufnahme-Einstellungen (Mikrofon, Mithören, Autotune)");
@@ -313,6 +350,20 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
             sync_monitor(app);
         }
         ui.horizontal(|ui| {
+            ui.checkbox(&mut app.settings.record_click, "Metronom bei Aufnahme").on_hover_text("Klick während der Aufnahme, auch wenn 🔔 aus ist");
+            ui.label("Einzählen");
+            let names = ["Aus", "1 Takt", "2 Takte"];
+            let cur = names[app.settings.record_count_in.min(2) as usize];
+            egui::ComboBox::from_id_salt("rec_countin").selected_text(cur).width(70.0).show_ui(ui, |ui| {
+                for (i, n) in names.iter().enumerate() {
+                    ui.selectable_value(&mut app.settings.record_count_in, i as u32, *n);
+                }
+            });
+        });
+        ui.checkbox(&mut app.settings.record_take_lanes, "Takes als Spuren stapeln (Comping)")
+            .on_hover_text("Nimmst du dieselbe Stelle nochmal auf, landet der neue Take auf einer eigenen Spur darunter und ist aktiv.
+Alt+Ziehen auf einer Take-Spur macht diesen Bereich aktiv (die anderen Takes werden dort stumm).");
+        ui.horizontal(|ui| {
             ui.label("Versatz");
             ui.add(egui::Slider::new(&mut app.settings.record_offset_ms, -100.0..=100.0).suffix(" ms"))
                 .on_hover_text("Feinkorrektur, falls Aufnahmen zu früh (+) oder zu spät (−) liegen. Normalerweise 0.");
@@ -351,7 +402,7 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
                 toggle(app);
             }
         });
-        ui.weak("Tipp: Playhead an die Stelle setzen, 🎤 drücken, singen, Stop. Jeder Take landet auf einer freien Vocals-Spur.");
+        ui.weak("Tipp: Playhead an die Stelle setzen, 🎤 drücken, singen, Stop. Takes derselben Stelle stapeln sich als Spuren – Alt+Ziehen auf einer Take-Spur wählt den aktiven Teil.");
     });
     if !open {
         app.rec.show_window = false;
@@ -360,7 +411,14 @@ pub fn window(app: &mut TStudio, ctx: &egui::Context) {
 
 #[cfg(test)]
 mod tests {
-    use super::place_take;
+    use super::{count_in_bars, place_take};
+
+    #[test]
+    fn count_in_is_whole_bars() {
+        assert_eq!(count_in_bars(0), 0);
+        assert_eq!(count_in_bars(1), 1);
+        assert_eq!(count_in_bars(9), 2, "at most two bars");
+    }
 
     #[test]
     fn take_is_trimmed_to_the_song_start() {
