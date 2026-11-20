@@ -6,6 +6,7 @@ mod compile;
 mod live;
 mod logo;
 mod midi;
+mod midi_map;
 mod samples;
 mod settings;
 mod ui;

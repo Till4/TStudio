@@ -134,6 +134,7 @@ impl TStudio {
                         }
                     }
                 }
+                MidiMsg::Cc(ch, cc, v) => ui::midi_learn::on_cc(self, ch, cc, v),
             }
         }
     }
@@ -302,6 +303,10 @@ impl TStudio {
             ui.menu_button("Ansicht", |ui| {
                 ui.checkbox(&mut self.show_library, "Sample-Library");
                 ui.checkbox(&mut self.settings.follow_playhead, "Playhead folgen");
+                if ui.button("🎛 MIDI-Learn…").clicked() {
+                    ui.close_menu();
+                    self.midi_learn.open = true;
+                }
             });
             ui.menu_button("Hinzufügen", |ui| {
                 if ui.button("TSynth-Kanal").clicked() {

@@ -74,6 +74,7 @@ pub struct TStudio {
     pub mixer_ui: ui::mixer::MixerState,
     pub instrument_ui: ui::instrument::InstrumentState,
     pub drumpad: ui::drumpad::DrumPadState,
+    pub midi_learn: ui::midi_learn::MidiLearnState,
     pub fetch: ui::fetch::FetchState,
     pub export: ui::export::ExportState,
     pub show_settings: bool,
@@ -144,6 +145,7 @@ impl TStudio {
             mixer_ui: Default::default(),
             instrument_ui: Default::default(),
             drumpad: Default::default(),
+            midi_learn: Default::default(),
             fetch,
             export: Default::default(),
             show_settings: false,
@@ -381,6 +383,7 @@ impl eframe::App for TStudio {
         ui::settings::window(self, ctx);
         ui::export::window(self, ctx);
         ui::record::window(self, ctx);
+        ui::midi_learn::window(self, ctx);
         self.template_window(ctx);
         self.backup_window(ctx);
         widgets::draw_drag_ghost(ctx);

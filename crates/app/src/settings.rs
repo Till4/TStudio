@@ -29,6 +29,8 @@ pub struct Settings {
     pub record_take_lanes: bool,
     pub buffer_size: Option<u32>,
     pub midi_port: Option<String>,
+    /// learned MIDI controller assignments (CC → mixer/synth parameter)
+    pub midi_mappings: Vec<crate::midi_map::CcMapping>,
     pub favorites: BTreeSet<PathBuf>,
     pub recent_projects: Vec<PathBuf>,
     pub preview_volume: f32,
@@ -63,6 +65,7 @@ impl Default for Settings {
             record_take_lanes: true,
             buffer_size: None,
             midi_port: None,
+            midi_mappings: Vec::new(),
             favorites: BTreeSet::new(),
             recent_projects: Vec::new(),
             roots_seeded: false,
