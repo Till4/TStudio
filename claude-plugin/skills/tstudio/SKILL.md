@@ -65,6 +65,8 @@ Der User arbeitet meist mit offenem TStudio. **Starte immer mit `$CLI status`:**
 $CLI status                                                  # läuft TStudio? welches Projekt, ungespeichert?
 $CLI save [--as E:/…/name.tsp]                               # offenes Projekt speichern (nur auf Wunsch des Users)
 $CLI new song.tsp --bpm 140 [--empty] [--name X] [--force]   # neu (Standard: 1 TSynth + Pattern 1)
+$CLI new song.tsp --template "Schranz 155" [--bpm 150]      # aus Vorlage: mitgeliefert (House 124, Techno 140, Schranz 155) oder eigene
+#   (eigene = in der App „Datei → Als Vorlage speichern…“); Tempo der Vorlage, außer --bpm ist angegeben
 $CLI info song.tsp
 $CLI presets                                                 # Synth-Presets, Effekt-Typen + Default-Parameter
 $CLI set song.tsp swing=0.25 mixer.0.volume=0.9              # Swing 0..1 (jede 2. 16tel später), Master-Lautstärke
@@ -119,10 +121,16 @@ $CLI tempo list song.tsp   |  $CLI tempo remove song.tsp --bar 33  |  $CLI tempo
 
 # Taktartwechsel (GUI: Rechtsklick in die Tempo-Spur → „Taktart ab Takt N“); alle --bar-Angaben folgen den Wechseln
 $CLI meter add song.tsp --bar 9 7/8 | meter add song.tsp --bar 10 4/4 | meter list song.tsp | meter remove song.tsp --bar 9
+# Einzählen bei Aufnahmen und Metronom folgen Taktart- und Tempo-Spur (1 Takt 7/8 = 7 Achtel-Klicks)
+
+# MIDI-Dateien (Standard MIDI File)
+$CLI midi export song.tsp out.mid [--pattern 2]      # ohne --pattern: ganzer Song inkl. Tempo- und Taktartwechseln (Rampen in Viertel-Schritten)
+$CLI midi import song.tsp in.mid [--name X] [--keep-tempo]   # neues Pattern, ein TSynth-Kanal pro MIDI-Spur (Kanal 10 = Drums), Tempo aus der Datei
 
 # Mixer / Effekte (Kanal → mixer_track aus `info`)
-$CLI fx add song.tsp --track 2 reverb      # eq compressor reverb delay distortion chorus filter limiter sidechain autotune clipper multiband ott
-$CLI fx chain song.tsp --track 1 schranz-kick [--replace]     # fertige Ketten: schranz-kick, master, ott, vocal, bass (--source Kick), rumble (--source Kick)
+$CLI fx add song.tsp --track 2 reverb      # eq compressor reverb delay distortion chorus filter limiter sidechain autotune clipper multiband ott width
+$CLI fx add song.tsp --track 4 width       # Stereobreite (Alias stereo/imager): Width {width 0–2 (1 = unverändert), mid_db, side_db, bass_mono_hz (0 = aus)}
+$CLI fx chain song.tsp --track 1 schranz-kick [--replace]     # fertige Ketten: schranz-kick, master, ott, vocal, bass (--source Kick), rumble (--source Kick), wide (140 %, Bass <150 Hz mono), mono-bass (<120 Hz mono)
 $CLI fx chain song.tsp --track 0 master --replace            # Master: EQ → Multiband → Clipper → Limiter (-1 dBTP)
 $CLI mixer rumble song.tsp --kick 1 [--amount 0.7]           # Rumble-Bus komplett: neue Spur + Send + Reverb/Verzerrung/Tiefpass/Sidechain
 $CLI fx add song.tsp --track 3 sidechain --source 1   # Spur 3 duckt, wenn Spur 1 (Kick) spielt
@@ -165,6 +173,7 @@ $CLI analyze master.wav --mix              # LUFS, True Peak, PLR, Frequenzbänd
 $CLI mix song.tsp [--reference ref.wav] [--master-only]   # Mix-Report: Master + jede Mixer-Spur einzeln + Maskierung (wer verdeckt wen) + Warnungen
 $CLI compare mein.wav referenz.wav         # Lautheit/Bänder/Dichte/Breite gegen einen echten Release, mit konkreten Vorschlägen
 $CLI render song.tsp out.wav --stems stems/   # zusätzlich jede Mixer-Spur einzeln (ohne Master-Effekte, Busse inklusive)
+#   Stems folgen Modus/Tail des Renders und der Tempo-Spur (gleiche Länge wie der Mix); Dateien "NN Name.wav"; in der App: Export → „Stems exportieren“
 $CLI stretch in.wav out.wav --from 92 --to 140 [--mode stretch|resample|off] [--pitch -2] [--formant]
 $CLI trim song.wav hook.wav --from-bar 25 --bars 8 [--bpm 144] [--downbeat 0.067] [--to-bpm 181.43 --mode resample] [--pitch 2 --formant]
 #   Schnitt im Beat-Raster (Grid wird erkannt, sonst --bpm/--downbeat aus `analyze --grid`); --from-beat/--beats für Beats statt Takte

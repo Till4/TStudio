@@ -19,29 +19,37 @@ Dateien sind bewusst klein gehalten (Richtwert: < 600 Zeilen, danach in `<name>/
 
 **dsp**
 - `synth/` – TSynth: `params.rs` (SynthParams), `osc_params.rs`, `kick.rs`, `lfo.rs`, `modmatrix.rs`, `voice.rs` (Voice-Rendering), `mod.rs` (`Synth`), `tests.rs`
-- `fx/` – `params.rs` (EffectKind/-Params), `processors.rs` (Effect-DSP), `tests.rs`; weitere Effekte in `fx_extra.rs`
-- `synth_presets.rs` (Presets), `filter.rs`, `osc.rs`, `wavetable.rs`, `stretch.rs`, `meter.rs`, `isolate.rs`, `autotune.rs`
+- `fx/` – `params.rs` (EffectKind/-Params), `processors.rs` (Effect-DSP), `tests.rs`; weitere Effekte in `fx_extra.rs` (Clipper/Multiband/OTT), `fx_width.rs` (Stereo-Width)
+- `synth_presets.rs` (Presets), `filter.rs`, `osc.rs`, `wavetable.rs`, `stretch.rs`, `meter.rs`, `isolate.rs`, `autotune.rs`,
+  `spectrum.rs` (FFT-Analyzer, 64 Bänder), `slicer.rs` (Even-/Transienten-Slices, Chop)
 
 **project**
-- `lib.rs` (Project, Kanäle, Clips), `automation.rs`, `tracks.rs`, `history.rs`, `tempo.rs` (Tempo-Spur: TempoPoint, TempoMap tick↔Sekunden), `meter.rs` (Taktartwechsel: MeterChange, BarMap Takt↔Tick, Metronom-Beats)
+- `lib.rs` (Project, Kanäle, Clips), `automation.rs`, `tracks.rs`, `history.rs`, `tempo.rs` (Tempo-Spur: TempoPoint, TempoMap tick↔Sekunden), `meter.rs` (Taktartwechsel: MeterChange, BarMap Takt↔Tick, Metronom-Beats),
+  `change.rs` (Undo-Labels/Coalescing für Mixer-Änderungen), `midi.rs` (MIDI-Datei Import/Export, midly), `templates.rs` (Projektvorlagen),
+  `takes.rs` (Take-Lanes/Comping), `steps.rs` (Step-Reihen für Drum Pads), `tests.rs`
 
 **engine**
 - `core.rs` – `EngineCore` (process/process_chunk); `core/shared.rs` (Command, SharedState, PlayMode),
-  `core/sequencer.rs` (Events, Clips, Swing, Latenz, Tempo-Map), `core/tests.rs`, `core/tempo_tests.rs`
-- `snapshot.rs`, `compile.rs` (Projekt → Snapshot), `audio.rs` (cpal), `render.rs` (Offline), `soundfont.rs`, `input.rs`
+  `core/sequencer.rs` (Events, Clips, Swing, Latenz, Tempo-Map), `core/count_in.rs` (Einzählen), `core/tests.rs`, `core/tempo_tests.rs`, `core/count_in_tests.rs`
+- `snapshot.rs`, `compile.rs` (Projekt → Snapshot), `audio.rs` (cpal), `render.rs` (Offline), `soundfont.rs`, `input.rs`,
+  `spectrum.rs` (Spektrum-Taps für den Mixer), `stems.rs` (+ `stems/tests.rs`; Stem-Planung/-Render für CLI und GUI)
 
 **app** (`crates/app/src`)
 - `app.rs` – `TStudio`-Struct, `View`, `update`-Schleife; `app/playback.rs` (Transport/Engine-Kommandos),
-  `app/project_io.rs` (Neu/Öffnen/Speichern/Undo, Kanäle & Clips hinzufügen), `app/chrome.rs` (Shortcuts, Menü, Transportleiste, Statusleiste)
-- `live.rs` – Fenster-Steuerung durch `tstudio-cli live`
+  `app/project_io.rs` (Neu/Öffnen/Speichern/Undo, Kanäle & Clips hinzufügen), `app/chrome.rs` (Shortcuts, Menü, Transportleiste, Statusleiste),
+  `app/templates.rs` (Neu aus Vorlage/Als Vorlage speichern), `app/recovery.rs` (Auto-Backup-Fenster), `app/midi_file.rs` (Datei → MIDI)
+- `live.rs` – Fenster-Steuerung durch `tstudio-cli live`; `backup.rs` (Backup-Rotation, Session-Lock); `midi.rs` (MIDI-Eingang), `midi_map.rs` (CC-Zuweisungen);
+  `settings.rs` (+ `settings/tests.rs`)
 - `ui/` – ein Modul pro Ansicht:
-  `playlist.rs` (+ `playlist/menus|automation|auto_edit|properties|tempo.rs`), `cutter.rs` (+ `cutter/stems|panels|tests.rs`),
-  `tsynth.rs` (+ `tsynth/helpers|pages|layout_tests.rs`), `piano_roll.rs`, `mixer.rs`, `rack.rs`, `instrument.rs`,
-  `library.rs`, `export.rs`, `fetch.rs`, `record.rs`, `settings.rs`, `widgets.rs` (gemeinsame Widgets/Farben)
+  `playlist.rs` (+ `playlist/menus|automation|auto_edit|properties|tempo.rs`), `cutter.rs` (+ `cutter/actions|edit|keys|markers|panels|stems|tests.rs`),
+  `tsynth.rs` (+ `tsynth/helpers|pages|layout_tests.rs`), `piano_roll.rs`, `mixer.rs` (+ `mixer/fx_params|spectrum.rs`), `rack.rs`, `instrument.rs`,
+  `drumpad.rs` (+ `drumpad/tests.rs`; F11), `midi_learn.rs`, `library.rs`, `export.rs` (inkl. Stems), `fetch.rs`, `record.rs` (Einzählen, Takes),
+  `settings.rs`, `widgets.rs` (gemeinsame Widgets/Farben)
+- Ansichten/Tasten: F5 Playlist, F6 Rack, F7 Piano Roll, F8 Instrument, F9 Mixer, F10 Sample-Cutter, F11 Drum Pads
 
 **cli** (`crates/cli/src`)
-- `main.rs` (Einstieg, JSON-Ausgabe), `args.rs` (alle clap-Definitionen; `args/timeline.rs`: tempo/meter), `helpers.rs` (Laden/Speichern, Selektoren, JSON-Pfade, `info`)
-- `cmd/mod.rs` – `run`-Dispatch; pro Bereich `cmd/channel|pattern|notes|clip|fx|mixer|track|auto|marker|section|tempo|meter.rs`
+- `main.rs` (Einstieg, JSON-Ausgabe), `args.rs` (alle clap-Definitionen; `args/timeline.rs`: tempo/meter, `args/midi.rs`: midi), `helpers.rs` (Laden/Speichern, Selektoren, JSON-Pfade, `info`)
+- `cmd/mod.rs` – `run`-Dispatch; pro Bereich `cmd/channel|pattern|notes|clip|fx|mixer|track|auto|marker|section|tempo|meter|midi.rs`
 - `audio.rs` (Analyse/Render), `tools.rs` (Akkorde, Sections, Hilfen), `spec.rs`, `live.rs`
 
 ## Konventionen beim Splitten
