@@ -182,3 +182,6 @@ pub fn default_sample_folders() -> Vec<PathBuf> {
     }
     cands.into_iter().filter(|p| p.is_dir()).collect()
 }
+
+#[cfg(test)]
+mod tests;

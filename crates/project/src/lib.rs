@@ -645,6 +645,24 @@ impl Project {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn files_without_the_newer_fields_load() {
+        // projects from before tempo track, time-signature changes and take lanes
+        let mut p = Project::new_default();
+        p.playlist.tracks.push(PlaylistTrack { name: "Vocals".into(), ..Default::default() });
+        let s = p.to_ron().unwrap();
+        let old: String = s
+            .lines()
+            .filter(|l| !["tempo:", "meters:", "take_group:"].iter().any(|k| l.trim_start().starts_with(k)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!old.contains("take_group") && !old.contains("meters"));
+        let q = Project::from_ron(&old).unwrap();
+        assert!(q.tempo.is_empty() && q.meters.is_empty());
+        assert!(q.playlist.tracks.iter().all(|t| t.take_group.is_none()));
+        assert_eq!(q.playlist.tracks.len(), p.playlist.tracks.len());
+    }
     use tstudio_dsp::fx::EffectKind;
 
     #[test]

@@ -280,6 +280,7 @@ impl TStudio {
                     self.export.open = true;
                 }
                 ui.menu_button("MIDI", |ui| self.midi_menu(ui));
+                ui.separator();
                 if ui.button("Backups wiederherstellen…").clicked() {
                     ui.close_menu();
                     self.backups.show_window = true;
